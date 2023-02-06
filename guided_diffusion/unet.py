@@ -567,7 +567,7 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
-
+        '''Unet左侧部分'''
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
@@ -594,7 +594,8 @@ class UNetModel(nn.Module):
                         use_scale_shift_norm=use_scale_shift_norm,
                     )
                 ]
-                ch = mult * model_channels
+                ch = mult * model_channels#通道扩大
+                #ds为下采样的比例
                 if ds in attention_resolutions:
                     layers.append(
                         AttentionBlock(
@@ -627,7 +628,7 @@ class UNetModel(nn.Module):
                         if resblock_updown
                         else Downsample(
                             ch, conv_resample, dims=dims, out_channels=out_ch
-                        )
+                        )#downsample下采样
                     )
                 )
 

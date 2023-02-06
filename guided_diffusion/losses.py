@@ -55,19 +55,24 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     :param x: the target images. It is assumed that this was uint8 values,
               rescaled to the range [-1, 1].
     :param means: the Gaussian mean Tensor.
-    :param log_scales: the Gaussian log stddev Tensor.
+    :param log_scales: the Gaussian log stddev Tensor.相当于标准差
     :return: a tensor like x of log probabilities (in nats).
     """
     assert x.shape == means.shape == log_scales.shape
-    centered_x = x - means
+    centered_x = x - means#减去均值
     inv_stdv = th.exp(-log_scales)
+    '''将[-1,1]分成255个bins，最右边的CDF记为1.最左边CDF记为0，用标准分布CDF的差分表示离散分布'''
     plus_in = inv_stdv * (centered_x + 1.0 / 255.0)
-    cdf_plus = approx_standard_normal_cdf(plus_in)
+    cdf_plus = approx_standard_normal_cdf(plus_in)#右侧分布
+
     min_in = inv_stdv * (centered_x - 1.0 / 255.0)
-    cdf_min = approx_standard_normal_cdf(min_in)
-    log_cdf_plus = th.log(cdf_plus.clamp(min=1e-12))
+    cdf_min = approx_standard_normal_cdf(min_in)#左侧分布
+
+    log_cdf_plus = th.log(cdf_plus.clamp(min=1e-12))#右边CDF的对数，同时保证最小值不为0
     log_one_minus_cdf_min = th.log((1.0 - cdf_min).clamp(min=1e-12))
+    '''用小范围的CDF差值表示PDF'''
     cdf_delta = cdf_plus - cdf_min
+    '''对于两个极限的地方分别设置条件'''
     log_probs = th.where(
         x < -0.999,
         log_cdf_plus,

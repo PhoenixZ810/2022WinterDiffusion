@@ -1,3 +1,4 @@
+'''定义各类超参数并构建模型与扩散过程'''
 import argparse
 import inspect
 
@@ -388,7 +389,7 @@ def sr_create_model(
         use_fp16=use_fp16,
     )
 
-
+''''''
 def create_gaussian_diffusion(
     *,
     steps=1000,
@@ -402,15 +403,16 @@ def create_gaussian_diffusion(
     rescale_learned_sigmas=False,
     timestep_respacing="",
 ):
-    betas = gd.get_named_beta_schedule(noise_schedule, steps)
+    '''生成一个扩散模型框架'''
+    betas = gd.get_named_beta_schedule(noise_schedule, steps)#定义加噪声规则
     if use_kl:
-        loss_type = gd.LossType.RESCALED_KL
+        loss_type = gd.LossType.RESCALED_KL#使用kl散度
     elif rescale_learned_sigmas:
         loss_type = gd.LossType.RESCALED_MSE
     else:
         loss_type = gd.LossType.MSE
     if not timestep_respacing:
-        timestep_respacing = [steps]
+        timestep_respacing = [steps]#对timestep做改进？
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
         betas=betas,

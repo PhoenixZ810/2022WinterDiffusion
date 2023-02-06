@@ -3,7 +3,7 @@ import torch as th
 
 from .gaussian_diffusion import GaussianDiffusion
 
-
+'''定义新的timestep优化规则，IDDPM'''
 def space_timesteps(num_timesteps, section_counts):
     """
     Create a list of timesteps to use from an original diffusion process,
@@ -74,11 +74,12 @@ class SpacedDiffusion(GaussianDiffusion):
         self.timestep_map = []
         self.original_num_steps = len(kwargs["betas"])
         base_diffusion = GaussianDiffusion(**kwargs)  # pylint: disable=missing-kwoa
+        '''计算全新时刻的β'''
         last_alpha_cumprod = 1.0
         new_betas = []
         for i, alpha_cumprod in enumerate(base_diffusion.alphas_cumprod):
             if i in self.use_timesteps:
-                new_betas.append(1 - alpha_cumprod / last_alpha_cumprod)
+                new_betas.append(1 - alpha_cumprod / last_alpha_cumprod)#根据α和β之间的关系式
                 last_alpha_cumprod = alpha_cumprod
                 self.timestep_map.append(i)
         kwargs["betas"] = np.array(new_betas)
@@ -87,7 +88,7 @@ class SpacedDiffusion(GaussianDiffusion):
     def p_mean_variance(
         self, model, *args, **kwargs
     ):  # pylint: disable=signature-differs
-        return super().p_mean_variance(self._wrap_model(model), *args, **kwargs)
+        return super().p_mean_variance(self._wrap_model(model), *args, **kwargs)#从父类(GaussianDiffusion)中借用函数
 
     def training_losses(
         self, model, *args, **kwargs
@@ -99,7 +100,7 @@ class SpacedDiffusion(GaussianDiffusion):
 
     def condition_score(self, cond_fn, *args, **kwargs):
         return super().condition_score(self._wrap_model(cond_fn), *args, **kwargs)
-
+'''对模型进行包裹'''
     def _wrap_model(self, model):
         if isinstance(model, _WrappedModel):
             return model

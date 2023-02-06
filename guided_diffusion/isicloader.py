@@ -13,7 +13,7 @@ import torchvision.transforms as transforms
 import pandas as pd
 from skimage.transform import rotate
 
-class ISICDataset(Dataset):
+class ISICDataset(Dataset):#定义dataset类
     def __init__(self, args, data_path , transform = None, mode = 'Training',plane = False):
 
 

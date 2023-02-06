@@ -20,7 +20,7 @@ viz = Visdom(port=8850)
 import torchvision.transforms as transforms
 
 def main():
-    args = create_argparser().parse_args()
+    args = create_argparser().parse_args()#创建各类超参数
 
     dist_util.setup_dist(args)
     logger.configure(dir = args.out_dir)
@@ -31,7 +31,7 @@ def main():
         tran_list = [transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor(),]
         transform_train = transforms.Compose(tran_list)
 
-        ds = ISICDataset(args, args.data_dir, transform_train)
+        ds = ISICDataset(args, args.data_dir, transform_train)#创建dataset类
         args.in_ch = 4
     elif args.data_name == 'BRATS':
         tran_list = [transforms.Resize((args.image_size,args.image_size)),]
@@ -100,9 +100,9 @@ def create_argparser():
         multi_gpu = None, #"0,1,2"
         out_dir='./results/'
     )
-    defaults.update(model_and_diffusion_defaults())
+    defaults.update(model_and_diffusion_defaults())#将defaults训练参数和model diffusion超参数合并为同一个词典
     parser = argparse.ArgumentParser()
-    add_dict_to_argparser(parser, defaults)
+    add_dict_to_argparser(parser, defaults)#将超参词典转化为超参
     return parser
 
 
