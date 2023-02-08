@@ -193,6 +193,7 @@ class GaussianDiffusion:
         )
         return mean, variance, log_variance
 
+    '''根据x_0和t正向计算x_t'''
     def q_sample(self, x_start, t, noise=None):
         """
         Diffuse the data for a given number of diffusion steps.
@@ -209,8 +210,9 @@ class GaussianDiffusion:
                 _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
                 + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
                 * noise
-        )
-'''计算后验真实均值方差'''
+        )#sqrt(alphat_bar)*x_t+sqrt(1-alphat_bar)*noise，根据x0和t推出x_t
+
+    '''计算后验真实均值方差'''
     def q_posterior_mean_variance(self, x_start, x_t, t):
         """
         Compute the mean and variance of the diffusion posterior:
@@ -232,7 +234,6 @@ class GaussianDiffusion:
             == x_start.shape[0]
         )
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
-
 
     def p_mean_variance(
         self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None
@@ -340,14 +341,14 @@ class GaussianDiffusion:
         }
 
 
-'''从噪声中反推x0'''
+    '''从噪声中反推x0'''
     def _predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
             - _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * eps
         )
-'''从xt和xt-1中反推出x0'''
+    '''从xt和xt-1中反推出x0'''
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
         assert x_t.shape == xprev.shape
         return (  # (xprev - coef2*x_t) / coef1
@@ -357,7 +358,7 @@ class GaussianDiffusion:
             )
             * x_t
         )
-'''从x0推测加的噪声？'''
+    '''从x0推测加的噪声？'''
     def _predict_eps_from_xstart(self, x_t, t, pred_xstart):
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
@@ -412,7 +413,7 @@ class GaussianDiffusion:
         image_size = self.image_size
         channels = self.channels
         return self.p_sample_loop_known(model,(batch_size, channels, image_size, image_size), img)
-'''从xt采样到xt-1'''
+    '''从xt采样到xt-1'''
     def p_sample(
         self,
         model,
@@ -455,7 +456,7 @@ class GaussianDiffusion:
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise#exp(0.5 * out["log_variance"])为标准差
 
         return {"sample": sample, "pred_xstart": out["pred_xstart"], "cal": out["cal"]}
-'''循环采样'''
+    '''循环采样'''
     def p_sample_loop(
         self,
         model,
@@ -578,7 +579,7 @@ class GaussianDiffusion:
             else:
                 cal_out = torch.clamp(final["cal"] * 0.5 + 0.5 * final["sample"][:,-1,:,:].unsqueeze(1), 0, 1)
         return final["sample"], x_noisy, img, final["cal"], cal_out
-'''从T倒推到0时刻'''
+    '''从T倒推到0时刻'''
     def p_sample_loop_progressive(
         self,
         model,
@@ -865,7 +866,7 @@ class GaussianDiffusion:
 
         return final["sample"], x_noisy, img
 
-'''递进式采样'''
+    '''递进式采样'''
     def ddim_sample_loop_progressive(
         self,
         model,
@@ -921,7 +922,7 @@ class GaussianDiffusion:
                  )
                 yield out
                 img = out["sample"]
-'''求对数似然'''
+    '''求对数似然'''
     def _vb_terms_bpd(
         self, model, x_start, x_t, t, clip_denoised=True, model_kwargs=None
     ):
@@ -960,7 +961,7 @@ class GaussianDiffusion:
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
 
-'''确定loss包含的种类'''
+    '''确定loss包含的种类'''
     def training_losses_segmentation(self, model, classifier, x_start, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
@@ -976,15 +977,15 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
-            noise = th.randn_like(x_start[:, -1:, ...])
+            noise = th.randn_like(x_start[:, -1:, ...])#将第四维mask填充为正态噪声，shape[8,1,256,256]
 
 
-        mask = x_start[:, -1:, ...]
-        res = torch.where(mask > 0, 1, 0)   #merge all tumor classes into one to get a binary segmentation mask
+        mask = x_start[:, -1:, ...]#shape[8,1,256,256]
+        res = torch.where(mask > 0, 1, 0)   #若mask中元素>0，则取1否则取0merge all tumor classes into one to get a binary segmentation mask
 
-        res_t = self.q_sample(res, t, noise=noise)     #add noise to the segmentation channel
+        res_t = self.q_sample(res, t, noise=noise)     #得到加噪后的x_t add noise to the segmentation channel
         x_t=x_start.float()
-        x_t[:, -1:, ...]=res_t.float()
+        x_t[:, -1:, ...]=res_t.float()#将第四维mask替换为加噪后的x_t
         terms = {}
 
 
@@ -1037,7 +1038,7 @@ class GaussianDiffusion:
 
         return (terms, model_output)
 
-'''先验的KL散度'''
+    '''先验的KL散度'''
     def _prior_bpd(self, x_start):
         """
         Get the prior KL term for the variational lower-bound, measured in

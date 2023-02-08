@@ -32,7 +32,7 @@ class ISICDataset(Dataset):#定义dataset类
         """Get the images"""
         name = self.name_list[index]+'.jpg'
         img_path = os.path.join(self.data_path, 'ISBI2016_ISIC_Part3B_'+ self.mode +'_Data',name)
-        
+        #分割后图片
         mask_name = name.split('.')[0] + '_Segmentation.png'
         msk_path = os.path.join(self.data_path, 'ISBI2016_ISIC_Part3B_'+ self.mode +'_Data',mask_name)
 
@@ -45,9 +45,9 @@ class ISICDataset(Dataset):#定义dataset类
             label = int(self.label_list[index])
 
         if self.transform:
-            state = torch.get_rng_state()
+            state = torch.get_rng_state()#返回随机生成器状态
             img = self.transform(img)
-            torch.set_rng_state(state)
+            torch.set_rng_state(state)#设置随机生成器状态
             mask = self.transform(mask)
 
         if self.mode == 'Training':

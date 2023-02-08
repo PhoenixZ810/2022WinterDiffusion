@@ -100,7 +100,7 @@ class SpacedDiffusion(GaussianDiffusion):
 
     def condition_score(self, cond_fn, *args, **kwargs):
         return super().condition_score(self._wrap_model(cond_fn), *args, **kwargs)
-'''对模型进行包裹'''
+    '''对模型进行包裹'''
     def _wrap_model(self, model):
         if isinstance(model, _WrappedModel):
             return model

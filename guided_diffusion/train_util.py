@@ -1,6 +1,7 @@
 import copy
 import functools
 import os
+import pdb
 
 import blobfile as bf
 import torch as th
@@ -58,7 +59,7 @@ class TrainLoop:
         self.diffusion = diffusion
         self.data = data
         self.batch_size = batch_size
-        self.microbatch = microbatch if microbatch > 0 else batch_size
+        self.microbatch = microbatch if microbatch > 0 else batch_size#除非设置microbatch>0否则即为batch_size
         self.lr = lr
         self.ema_rate = (
             [ema_rate]
@@ -176,12 +177,13 @@ class TrainLoop:
 
 
             try:
-                    batch, cond = next(data_iter)
+                    batch, cond = next(data_iter)#next返回一个batch的数据整体长度为总个数/batchsize, batch代表输入图像，cond代表分割图像
+                    # pdb.set_trace()
             except StopIteration:
                     # StopIteration is thrown if dataset ends
                     # reinitialize data loader
                     data_iter = iter(self.dataloader)
-                    batch, cond = next(data_iter)
+                    batch, cond = next(data_iter)#batch.shape[8,3,256,256],cond.shape[8,1,256,256]
 
             self.run_step(batch, cond)
 
@@ -201,8 +203,7 @@ class TrainLoop:
             self.save()
 
     def run_step(self, batch, cond):
-        batch=th.cat((batch, cond), dim=1)
-
+        batch=th.cat((batch, cond), dim=1)#通道维度进行拼接
         cond={}
         sample = self.forward_backward(batch, cond)
         took_step = self.mp_trainer.optimize(self.opt)
@@ -216,15 +217,17 @@ class TrainLoop:
 
         self.mp_trainer.zero_grad()
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i : i + self.microbatch].to(dist_util.dev())
+            micro = batch[i : i + self.microbatch].to(dist_util.dev())#获取batch内容并分配给gpu，micro.shape[8,4,256,256]
             micro_cond = {
                 k: v[i : i + self.microbatch].to(dist_util.dev())
                 for k, v in cond.items()
             }
 
             last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
-
+            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())#t为0-999内的batchsize个数，weights为batchsize个1
+            #schedule_sampler为UniformSampler(diffusion, diffusion_steps)，由train_loop传入，
+            # pdb.set_trace()
+            '''使用partial生成带有固定参数的函数，training_losses_segementation为函数，其他变量为固定参数'''
             compute_losses = functools.partial(
                 self.diffusion.training_losses_segmentation,
                 self.ddp_model,

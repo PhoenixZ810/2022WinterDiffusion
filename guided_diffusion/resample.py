@@ -19,7 +19,7 @@ def create_named_schedule_sampler(name, diffusion, maxt):
     else:
         raise NotImplementedError(f"unknown schedule sampler: {name}")
 
-
+'''定义自抽象类，但是可以通过定义抽象类方法，使继承自本类的类拥有固定需要实现的类方法和固定的已经实现的方法'''
 class ScheduleSampler(ABC):
     """
     A distribution over timesteps in the diffusion process, intended to reduce
@@ -31,7 +31,7 @@ class ScheduleSampler(ABC):
     terms are reweighted, allowing for actual changes in the objective.
     """
 
-    @abstractmethod
+    @abstractmethod#定义抽象类方法
     def weights(self):
         """
         Get a numpy array of weights, one per diffusion step.
@@ -51,14 +51,15 @@ class ScheduleSampler(ABC):
         """
         w = self.weights()
         p = w / np.sum(w)
-        indices_np = np.random.choice(len(p), size=(batch_size,), p=p)
+        indices_np = np.random.choice(len(p), size=(batch_size,), p=p)#从0-999内随机挑选出batchsize个数字，每个数字被挑选到的概率都是1/1000
         indices = th.from_numpy(indices_np).long().to(device)
         weights_np = 1 / (len(p) * p[indices_np])
         weights = th.from_numpy(weights_np).float().to(device)
         return indices, weights
 
-
+'''UniformSampler继承抽象类ScheduleSampler，必须实现抽象类方法weights'''
 class UniformSampler(ScheduleSampler):
+    '''diffusion'''
     def __init__(self, diffusion, maxt):
         self.diffusion = diffusion
         self._weights = np.ones([maxt])
