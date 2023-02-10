@@ -27,7 +27,7 @@ import pdb
 
 
 def main():
-    args = create_argparser().parse_args()#创建各类超参数
+    args = create_argparser().parse_args()  #创建各类超参数
 
     dist_util.setup_dist(args)
     logger.configure(dir = args.out_dir)
@@ -35,10 +35,10 @@ def main():
     logger.log("creating data loader...")
 
     if args.data_name == 'ISIC':
-        tran_list = [transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor(),]#传入需要对图片进行的操作
-        transform_train = transforms.Compose(tran_list)#生成操作容器，便于对图片进行操作
+        tran_list = [transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor(),]  #传入需要对图片进行的操作
+        transform_train = transforms.Compose(tran_list)  # 生成操作容器，便于对图片进行操作
 
-        ds = ISICDataset(args, args.data_dir, transform_train)#创建dataset类
+        ds = ISICDataset(args, args.data_dir, transform_train)  # 创建dataset类
         args.in_ch = 4
     elif args.data_name == 'BRATS':
         tran_list = [transforms.Resize((args.image_size,args.image_size)),]
@@ -47,21 +47,24 @@ def main():
         ds = BRATSDataset(args.data_dir, transform_train, test_flag=False)
         args.in_ch = 5
     elif args.data_name == 'FDST':
-        tran_list = [transforms.ToTensor(), ]
+        tran_list = [transforms.Resize((240, 135)), transforms.ToTensor(), ]
         transform_train = transforms.Compose(tran_list)
 
         ds = FDSTDataset(args.data_dir, transform_train, test_flag=False)
-    datal= th.utils.data.DataLoader(
+        args.in_ch = 4
+        args.image_size = 256
+
+    datal = th.utils.data.DataLoader(
         ds,
         batch_size=args.batch_size,
-        shuffle=True)#生成dataloader
-    data = iter(datal)#生成迭代对象
+        shuffle=True)  # 生成dataloader
+    data = iter(datal)  # 生成迭代对象
 
     logger.log("creating model and diffusion...")
 
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
-    )#生成模型和diffusion方法
+    )  # 生成模型和diffusion方法
     if args.multi_gpu:
         model = th.nn.DataParallel(model,device_ids=[int(id) for id in args.multi_gpu.split(',')])
         model.to(device = th.device('cuda', int(args.gpu_dev)))

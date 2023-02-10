@@ -1,3 +1,4 @@
+import pdb
 from abc import abstractmethod
 import math
 import numpy as np
@@ -8,7 +9,7 @@ import torch.nn.functional as F
 from collections import OrderedDict
 from .fp16_util import convert_module_to_f16, convert_module_to_f32
 from copy import deepcopy
-from .utils import softmax_helper,sigmoid_helper
+from .utils import softmax_helper, sigmoid_helper
 from .utils import InitWeights_He
 from batchgenerators.augmentations.utils import pad_nd_image
 from .utils import no_op
@@ -34,11 +35,11 @@ class AttentionPool2d(nn.Module):
     """
 
     def __init__(
-        self,
-        spacial_dim: int,
-        embed_dim: int,
-        num_heads_channels: int,
-        output_dim: int = None,
+            self,
+            spacial_dim: int,
+            embed_dim: int,
+            num_heads_channels: int,
+            output_dim: int = None,
     ):
         super().__init__()
         self.positional_embedding = nn.Parameter(
@@ -72,6 +73,9 @@ class TimestepBlock(nn.Module):
         """
 
 
+'''继承TimestepBlock且需要传入参数nn.sequential'''
+
+
 class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     """
     A sequential module that passes timestep embeddings to the children that
@@ -80,6 +84,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
     def forward(self, x, emb):
         for layer in self:
+            '''如果是继承自TimesBlock的类，如ResBlock则需要传入embedding否则不用'''
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
             else:
@@ -119,6 +124,9 @@ class Upsample(nn.Module):
         return x
 
 
+'''下采样，长宽缩减为1/2'''
+
+
 class Downsample(nn.Module):
     """
     A downsampling layer with an optional convolution.
@@ -148,12 +156,14 @@ class Downsample(nn.Module):
         assert x.shape[1] == self.channels
         return self.op(x)
 
+
 def conv_bn(inp, oup, stride):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
         nn.BatchNorm2d(oup),
         nn.ReLU(inplace=True)
-        )
+    )
+
 
 def conv_dw(inp, oup, stride):
     return nn.Sequential(
@@ -168,27 +178,27 @@ def conv_dw(inp, oup, stride):
         nn.ReLU(inplace=True),
     )
 
-class MobBlock(nn.Module):
-    def __init__(self,ind):
-        super().__init__()
 
+class MobBlock(nn.Module):
+    def __init__(self, ind):
+        super().__init__()
 
         if ind == 0:
             self.stage = nn.Sequential(
-            conv_bn(3, 32, 2),
-            conv_dw(32, 64, 1),
-            conv_dw(64, 128, 1),
-            conv_dw(128, 128, 1)
-        )
+                conv_bn(3, 32, 2),
+                conv_dw(32, 64, 1),
+                conv_dw(64, 128, 1),
+                conv_dw(128, 128, 1)
+            )
         elif ind == 1:
-            self.stage  = nn.Sequential(
-            conv_dw(128, 256, 2),
-            conv_dw(256, 256, 1)
-        )
+            self.stage = nn.Sequential(
+                conv_dw(128, 256, 2),
+                conv_dw(256, 256, 1)
+            )
         elif ind == 2:
             self.stage = nn.Sequential(
-            conv_dw(256, 256, 2),
-            conv_dw(256, 256, 1)
+                conv_dw(256, 256, 2),
+                conv_dw(256, 256, 1)
             )
         else:
             self.stage = nn.Sequential(
@@ -200,9 +210,8 @@ class MobBlock(nn.Module):
                 conv_dw(512, 512, 1)
             )
 
-    def forward(self,x):
+    def forward(self, x):
         return self.stage(x)
-
 
 
 class ResBlock(TimestepBlock):
@@ -223,17 +232,17 @@ class ResBlock(TimestepBlock):
     """
 
     def __init__(
-        self,
-        channels,
-        emb_channels,
-        dropout,
-        out_channels=None,
-        use_conv=False,
-        use_scale_shift_norm=False,
-        dims=2,
-        use_checkpoint=False,
-        up=False,
-        down=False,
+            self,
+            channels,
+            emb_channels,
+            dropout,
+            out_channels=None,
+            use_conv=False,
+            use_scale_shift_norm=False,
+            dims=2,
+            use_checkpoint=False,
+            up=False,
+            down=False,
     ):
         super().__init__()
         self.channels = channels
@@ -321,6 +330,7 @@ class ResBlock(TimestepBlock):
         return self.skip_connection(x) + h
 
 
+'''带残差的注意力机制'''
 class AttentionBlock(nn.Module):
     """
     An attention block that allows spatial positions to attend to each other.
@@ -330,12 +340,12 @@ class AttentionBlock(nn.Module):
     """
 
     def __init__(
-        self,
-        channels,
-        num_heads=1,
-        num_head_channels=-1,
-        use_checkpoint=False,
-        use_new_attention_order=False,
+            self,
+            channels,
+            num_heads=1,
+            num_head_channels=-1,
+            use_checkpoint=False,
+            use_new_attention_order=False,
     ):
         super().__init__()
         self.channels = channels
@@ -343,7 +353,7 @@ class AttentionBlock(nn.Module):
             self.num_heads = num_heads
         else:
             assert (
-                channels % num_head_channels == 0
+                    channels % num_head_channels == 0
             ), f"q,k,v channels {channels} is not divisible by num_head_channels {num_head_channels}"
             self.num_heads = channels // num_head_channels
         self.use_checkpoint = use_checkpoint
@@ -457,24 +467,27 @@ class QKVAttention(nn.Module):
     def count_flops(model, _x, y):
         return count_flops_attn(model, _x, y)
 
+
 class FFParser(nn.Module):
     def __init__(self, dim, h=128, w=65):
         super().__init__()
-        self.complex_weight = nn.Parameter(torch.randn(dim, h, w, 2, dtype=torch.float32) * 0.02)
+
         self.w = w
         self.h = h
+        self.complex_weight = nn.Parameter(torch.randn(dim, self.h, self.w, 2, dtype=torch.float32) * 0.02)
 
     def forward(self, x, spatial_size=None):
         B, C, H, W = x.shape
-        assert H == W, "height and width are not equal"
-        if spatial_size is None:
-            a = b = H
-        else:
-            a, b = spatial_size
+        # assert H == W, "height and width are not equal"
+        # if spatial_size is None:
+        #     a = b = H
+        # else:
+        #     a, b = spatial_size
 
         # x = x.view(B, a, b, C)
         x = x.to(torch.float32)
-        x = torch.fft.rfft2(x, dim=(2, 3), norm='ortho')
+        # pdb.set_trace()
+        x = torch.fft.rfft2(x, dim=(2, 3), norm='ortho')  # 经过fft后w变为一半
         weight = torch.view_as_complex(self.complex_weight)
         x = x * weight
         x = torch.fft.irfft2(x, s=(H, W), dim=(2, 3), norm='ortho')
@@ -515,27 +528,27 @@ class UNetModel(nn.Module):
     """
 
     def __init__(
-        self,
-        image_size,
-        in_channels,
-        model_channels,
-        out_channels,
-        num_res_blocks,
-        attention_resolutions,
-        dropout=0,
-        channel_mult=(1, 2, 4, 8),
-        conv_resample=True,
-        dims=2,
-        num_classes=None,
-        use_checkpoint=False,
-        use_fp16=False,
-        num_heads=1,
-        num_head_channels=-1,
-        num_heads_upsample=-1,
-        use_scale_shift_norm=False,
-        resblock_updown=False,
-        use_new_attention_order=False,
-        high_way = True,
+            self,
+            image_size,
+            in_channels,
+            model_channels,
+            out_channels,
+            num_res_blocks,
+            attention_resolutions,
+            dropout=0,
+            channel_mult=(1, 2, 4, 8),
+            conv_resample=True,
+            dims=2,
+            num_classes=None,
+            use_checkpoint=False,
+            use_fp16=False,
+            num_heads=1,
+            num_head_channels=-1,
+            num_heads_upsample=-1,
+            use_scale_shift_norm=False,
+            resblock_updown=False,
+            use_new_attention_order=False,
+            high_way=True,
     ):
         super().__init__()
 
@@ -564,7 +577,7 @@ class UNetModel(nn.Module):
             nn.SiLU(),
             linear(time_embed_dim, time_embed_dim),
         )
-
+        # 如果是条件生成，定义label_embedding
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
         '''Unet左侧部分'''
@@ -572,7 +585,7 @@ class UNetModel(nn.Module):
             [
                 TimestepEmbedSequential(
                     conv_nd(dims, in_channels, model_channels, 3, padding=1)
-                )
+                )  # ndims卷积
             ]
         )
 
@@ -580,8 +593,9 @@ class UNetModel(nn.Module):
         input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
+        '''channel_mult通道乘子'''
         for level, mult in enumerate(channel_mult):
-            
+
             for _ in range(num_res_blocks):
                 layers = [
                     ResBlock(
@@ -594,8 +608,8 @@ class UNetModel(nn.Module):
                         use_scale_shift_norm=use_scale_shift_norm,
                     )
                 ]
-                ch = mult * model_channels#通道扩大
-                #ds为下采样的比例
+                ch = mult * model_channels  # 通道扩大
+                # ds为下采样的比例，如果ds在attention_resolution中
                 if ds in attention_resolutions:
                     layers.append(
                         AttentionBlock(
@@ -609,7 +623,6 @@ class UNetModel(nn.Module):
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
-
 
             if level != len(channel_mult) - 1:
                 out_ch = ch
@@ -628,7 +641,7 @@ class UNetModel(nn.Module):
                         if resblock_updown
                         else Downsample(
                             ch, conv_resample, dims=dims, out_channels=out_ch
-                        )#downsample下采样
+                        )  # downsample下采样
                     )
                 )
 
@@ -713,7 +726,7 @@ class UNetModel(nn.Module):
         self.out = nn.Sequential(
             normalization(ch),
             nn.SiLU(),
-            zero_module(conv_nd(dims, model_channels , out_channels, 3, padding=1)),
+            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
 
         if high_way:
@@ -735,15 +748,14 @@ class UNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
-    
+
     def enhance(self, c, h):
         cu = layer_norm(c.size()[1:])(c)
         hu = layer_norm(h.size()[1:])(h)
         return cu * hu * h
-    
-    def highway_forward(self,x, hs):
-        return self.hwm(x,hs)
 
+    def highway_forward(self, x, hs):
+        return self.hwm(x, hs)
 
     def forward(self, x, timesteps, y=None):
         """
@@ -755,29 +767,29 @@ class UNetModel(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         assert (y is not None) == (
-            self.num_classes is not None
+                self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
 
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))  # emb.shape[8,512]
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        h = x.type(self.dtype)
-        c = h[:,:-1,...]
-        hlist= []
+        h = x.type(self.dtype)  # [8, 4, 240, 135]
+        c = h[:, :-1, ...]  # 选取rgb三个通道[8, 3, 240, 135]
+        hlist = []
         for ind, module in enumerate(self.input_blocks):
             if len(emb.size()) > 2:
                 emb = emb.squeeze()
             h = module(h, emb)
             hs.append(h)
-        uemb, cal = self.highway_forward(c, [hs[3],hs[6],hs[9],hs[12]])
-        h = h + uemb
+        uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])  # uemb为conditional encoder返回值
+        h = h + uemb  # 累加
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
+            h = th.cat([h, hs.pop()], dim=1)  # 在Unet中，output要与对应的input层相结合，用pop逐层弹出最后一个
             h = module(h, emb)
         h = h.type(x.dtype)
         out = self.out(h)
@@ -809,26 +821,26 @@ class EncoderUNetModel(nn.Module):
     """
 
     def __init__(
-        self,
-        image_size,
-        in_channels,
-        model_channels,
-        out_channels,
-        num_res_blocks,
-        attention_resolutions,
-        dropout=0,
-        channel_mult=(1, 2, 4, 8),
-        conv_resample=True,
-        dims=2,
-        use_checkpoint=False,
-        use_fp16=False,
-        num_heads=1,
-        num_head_channels=-1,
-        num_heads_upsample=-1,
-        use_scale_shift_norm=False,
-        resblock_updown=False,
-        use_new_attention_order=False,
-        pool="adaptive",
+            self,
+            image_size,
+            in_channels,
+            model_channels,
+            out_channels,
+            num_res_blocks,
+            attention_resolutions,
+            dropout=0,
+            channel_mult=(1, 2, 4, 8),
+            conv_resample=True,
+            dims=2,
+            use_checkpoint=False,
+            use_fp16=False,
+            num_heads=1,
+            num_head_channels=-1,
+            num_heads_upsample=-1,
+            use_scale_shift_norm=False,
+            resblock_updown=False,
+            use_new_attention_order=False,
+            pool="adaptive",
     ):
         super().__init__()
 
@@ -946,7 +958,7 @@ class EncoderUNetModel(nn.Module):
         )
         self._feature_size += ch
         self.pool = pool
-        self.gap = nn.AvgPool2d((8, 8))  #global average pooling
+        self.gap = nn.AvgPool2d((8, 8))  # global average pooling
         self.cam_feature_maps = None
         print('pool', pool)
         if pool == "adaptive":
@@ -993,8 +1005,6 @@ class EncoderUNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
 
-
-
     def forward(self, x, timesteps):
         """
         Apply the model to an input batch.
@@ -1013,7 +1023,6 @@ class EncoderUNetModel(nn.Module):
                 results.append(h.type(x.dtype).mean(dim=(2, 3)))
         h = self.middle_block(h, emb)
 
-
         if self.pool.startswith("spatial"):
             self.cam_feature_maps = h
             h = self.gap(h)
@@ -1025,6 +1034,7 @@ class EncoderUNetModel(nn.Module):
             h = h.type(x.dtype)
             self.cam_feature_maps = h
             return self.out(h)
+
 
 class NeuralNetwork(nn.Module):
     def __init__(self):
@@ -1073,7 +1083,8 @@ class SegmentationNetwork(NeuralNetwork):
 
     def predict_3D(self, x: np.ndarray, do_mirroring: bool, mirror_axes: Tuple[int, ...] = (0, 1, 2),
                    use_sliding_window: bool = False,
-                   step_size: float = 0.5, patch_size: Tuple[int, ...] = None, regions_class_order: Tuple[int, ...] = None,
+                   step_size: float = 0.5, patch_size: Tuple[int, ...] = None,
+                   regions_class_order: Tuple[int, ...] = None,
                    use_gaussian: bool = False, pad_border_mode: str = "constant",
                    pad_kwargs: dict = None, all_in_gpu: bool = False,
                    verbose: bool = True, mixed_precision: bool = True) -> Tuple[np.ndarray, np.ndarray]:
@@ -1112,20 +1123,24 @@ class SegmentationNetwork(NeuralNetwork):
             with torch.no_grad():
                 if self.conv_op == nn.Conv3d:
                     if use_sliding_window:
-                        res = self._internal_predict_3D_3Dconv_tiled(x, step_size, do_mirroring, mirror_axes, patch_size,
+                        res = self._internal_predict_3D_3Dconv_tiled(x, step_size, do_mirroring, mirror_axes,
+                                                                     patch_size,
                                                                      regions_class_order, use_gaussian, pad_border_mode,
                                                                      pad_kwargs=pad_kwargs, all_in_gpu=all_in_gpu,
                                                                      verbose=verbose)
                     else:
-                        res = self._internal_predict_3D_3Dconv(x, patch_size, do_mirroring, mirror_axes, regions_class_order,
+                        res = self._internal_predict_3D_3Dconv(x, patch_size, do_mirroring, mirror_axes,
+                                                               regions_class_order,
                                                                pad_border_mode, pad_kwargs=pad_kwargs, verbose=verbose)
                 elif self.conv_op == nn.Conv2d:
                     if use_sliding_window:
-                        res = self._internal_predict_3D_2Dconv_tiled(x, patch_size, do_mirroring, mirror_axes, step_size,
+                        res = self._internal_predict_3D_2Dconv_tiled(x, patch_size, do_mirroring, mirror_axes,
+                                                                     step_size,
                                                                      regions_class_order, use_gaussian, pad_border_mode,
                                                                      pad_kwargs, all_in_gpu, False)
                     else:
-                        res = self._internal_predict_3D_2Dconv(x, patch_size, do_mirroring, mirror_axes, regions_class_order,
+                        res = self._internal_predict_3D_2Dconv(x, patch_size, do_mirroring, mirror_axes,
+                                                               regions_class_order,
                                                                pad_border_mode, pad_kwargs, all_in_gpu, False)
                 else:
                     raise RuntimeError("Invalid conv op, cannot determine what dimensionality (2d/3d) the network is")
@@ -1171,11 +1186,13 @@ class SegmentationNetwork(NeuralNetwork):
             with torch.no_grad():
                 if self.conv_op == nn.Conv2d:
                     if use_sliding_window:
-                        res = self._internal_predict_2D_2Dconv_tiled(x, step_size, do_mirroring, mirror_axes, patch_size,
+                        res = self._internal_predict_2D_2Dconv_tiled(x, step_size, do_mirroring, mirror_axes,
+                                                                     patch_size,
                                                                      regions_class_order, use_gaussian, pad_border_mode,
                                                                      pad_kwargs, all_in_gpu, verbose)
                     else:
-                        res = self._internal_predict_2D_2Dconv(x, patch_size, do_mirroring, mirror_axes, regions_class_order,
+                        res = self._internal_predict_2D_2Dconv(x, patch_size, do_mirroring, mirror_axes,
+                                                               regions_class_order,
                                                                pad_border_mode, pad_kwargs, verbose)
                 else:
                     raise RuntimeError("Invalid conv op, cannot determine what dimensionality (2d/3d) the network is")
@@ -1199,7 +1216,8 @@ class SegmentationNetwork(NeuralNetwork):
         return gaussian_importance_map
 
     @staticmethod
-    def _compute_steps_for_sliding_window(patch_size: Tuple[int, ...], image_size: Tuple[int, ...], step_size: float) -> List[List[int]]:
+    def _compute_steps_for_sliding_window(patch_size: Tuple[int, ...], image_size: Tuple[int, ...], step_size: float) -> \
+    List[List[int]]:
         assert [i >= j for i, j in zip(image_size, patch_size)], "image size must be as large or larger than patch_size"
         assert 0 < step_size <= 1, 'step_size must be larger than 0 and smaller or equal to 1'
 
@@ -1207,7 +1225,8 @@ class SegmentationNetwork(NeuralNetwork):
         # 110, patch size of 64 and step_size of 0.5, then we want to make 3 steps starting at coordinate 0, 23, 46
         target_step_sizes_in_voxels = [i * step_size for i in patch_size]
 
-        num_steps = [int(np.ceil((i - k) / j)) + 1 for i, j, k in zip(image_size, target_step_sizes_in_voxels, patch_size)]
+        num_steps = [int(np.ceil((i - k) / j)) + 1 for i, j, k in
+                     zip(image_size, target_step_sizes_in_voxels, patch_size)]
 
         steps = []
         for dim in range(len(patch_size)):
@@ -1268,7 +1287,7 @@ class SegmentationNetwork(NeuralNetwork):
 
             gaussian_importance_map = torch.from_numpy(gaussian_importance_map)
 
-            #predict on cpu if cuda not available
+            # predict on cpu if cuda not available
             if torch.cuda.is_available():
                 gaussian_importance_map = gaussian_importance_map.cuda(self.get_device(), non_blocking=True)
 
@@ -1473,11 +1492,11 @@ class SegmentationNetwork(NeuralNetwork):
                 result_torch += 1 / num_results * pred
 
             if m == 1 and (2 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (4, ))))
+                pred = self.inference_apply_nonlin(self(torch.flip(x, (4,))))
                 result_torch += 1 / num_results * torch.flip(pred, (4,))
 
             if m == 2 and (1 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (3, ))))
+                pred = self.inference_apply_nonlin(self(torch.flip(x, (3,))))
                 result_torch += 1 / num_results * torch.flip(pred, (3,))
 
             if m == 3 and (2 in mirror_axes) and (1 in mirror_axes):
@@ -1485,7 +1504,7 @@ class SegmentationNetwork(NeuralNetwork):
                 result_torch += 1 / num_results * torch.flip(pred, (4, 3))
 
             if m == 4 and (0 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (2, ))))
+                pred = self.inference_apply_nonlin(self(torch.flip(x, (2,))))
                 result_torch += 1 / num_results * torch.flip(pred, (2,))
 
             if m == 5 and (0 in mirror_axes) and (2 in mirror_axes):
@@ -1539,12 +1558,12 @@ class SegmentationNetwork(NeuralNetwork):
                 result_torch += 1 / num_results * pred
 
             if m == 1 and (1 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (3, ))))
-                result_torch += 1 / num_results * torch.flip(pred, (3, ))
+                pred = self.inference_apply_nonlin(self(torch.flip(x, (3,))))
+                result_torch += 1 / num_results * torch.flip(pred, (3,))
 
             if m == 2 and (0 in mirror_axes):
-                pred = self.inference_apply_nonlin(self(torch.flip(x, (2, ))))
-                result_torch += 1 / num_results * torch.flip(pred, (2, ))
+                pred = self.inference_apply_nonlin(self(torch.flip(x, (2,))))
+                result_torch += 1 / num_results * torch.flip(pred, (2,))
 
             if m == 3 and (0 in mirror_axes) and (1 in mirror_axes):
                 pred = self.inference_apply_nonlin(self(torch.flip(x, (3, 2))))
@@ -1742,7 +1761,7 @@ class SegmentationNetwork(NeuralNetwork):
     def _internal_predict_3D_2Dconv_tiled(self, x: np.ndarray, patch_size: Tuple[int, int], do_mirroring: bool,
                                           mirror_axes: tuple = (0, 1), step_size: float = 0.5,
                                           regions_class_order: tuple = None, use_gaussian: bool = False,
-                                          pad_border_mode: str = "edge", pad_kwargs: dict =None,
+                                          pad_border_mode: str = "edge", pad_kwargs: dict = None,
                                           all_in_gpu: bool = False,
                                           verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
         if all_in_gpu:
@@ -2031,16 +2050,17 @@ class Generic_UNet(SegmentationNetwork):
                                                               self.dropout_op_kwargs, self.nonlin, self.nonlin_kwargs,
                                                               first_stride, basic_block=basic_block))
             if d != num_pool - 1:
-                self.ffparser.append(FFParser(output_features, 256 // (2 **(d+1)), 256 // (2 **(d+2))+1))
+                '''FDST'''
+                self.ffparser.append(FFParser(output_features, 240 // (2 ** (d + 1)), (135 // (2 ** (d + 1)) + 1)//2+1))
+                '''else'''
+                # self.ffparser.append(FFParser(output_features, 256 // (2 ** (d + 1)), 256 // (2 ** (d + 2)) + 1))
 
             if not self.convolutional_pooling:
-                self.td.append(pool_op(pool_op_kernel_sizes[d]))
+                self.td.append(pool_op(pool_op_kernel_sizes[d],ceil_mode=True))
             input_features = output_features
             output_features = int(np.round(output_features * feat_map_mul_on_downscale))
 
             output_features = min(output_features, self.max_num_features)
-        
-
 
         # now the bottleneck.
         # determine the first stride
@@ -2109,14 +2129,14 @@ class Generic_UNet(SegmentationNetwork):
                                                 1, 1, 0, 1, 1, seg_output_use_bias))
         else:
             self.seg_outputs.append(conv_op(self.conv_blocks_localization[-1][-1].output_channels, num_classes,
-                            1, 1, 0, 1, 1, seg_output_use_bias))
+                                            1, 1, 0, 1, 1, seg_output_use_bias))
 
         self.upscale_logits_ops = []
         cum_upsample = np.cumprod(np.vstack(pool_op_kernel_sizes), axis=0)[::-1]
         for usl in range(num_pool - 1):
             if self.upscale_logits:
                 self.upscale_logits_ops.append(hwUpsample(scale_factor=tuple([int(i) for i in cum_upsample[usl + 1]]),
-                                                        mode=upsample_mode))
+                                                          mode=upsample_mode))
             else:
                 self.upscale_logits_ops.append(lambda x: x)
 
@@ -2141,24 +2161,27 @@ class Generic_UNet(SegmentationNetwork):
     def forward(self, x, hs):
         skips = []
         seg_outputs = []
+        '''输入x为RGB图片作为conditional input'''
         for d in range(len(self.conv_blocks_context) - 1):
             x = self.conv_blocks_context[d](x)
+            # pdb.set_trace()
             skips.append(x)
             if not self.convolutional_pooling:
-                x = self.td[d](x)
+                x = self.td[d](x)  # 池化下采样
             if hs:
                 h = hs.pop(0)
                 ddims = h.size(1)
-                h = conv_nd(2, ddims, x.size(1), 1).to(device = x.device)(h)
-                h = self.ffparser[d](h)
-                ha = conv_nd(2, x.size(1), 1, 1).to(device = x.device)(h)
-                hb = th.mean(h,(2,3))
-                hb = hb[:,:,None,None]
+                h = conv_nd(2, ddims, x.size(1), 1).to(device=x.device)(h)  # h.shape[8,32,120,68]
+                # pdb.set_trace()
+                h = self.ffparser[d](h)  # h.shape[8,32,120,68]
+                ha = conv_nd(2, x.size(1), 1, 1).to(device=x.device)(h)
+                hb = th.mean(h, (2, 3))
+                hb = hb[:, :, None, None]
+                # pdb.set_trace()
                 x = x * ha * hb
-            
 
         x = self.conv_blocks_context[-1](x)
-        emb = conv_nd(2, x.size(1), 512, 1).to(device = x.device)(x)
+        emb = conv_nd(2, x.size(1), 512, 1).to(device=x.device)(x)
 
         for u in range(len(self.tu)):
             x = self.tu[u](x)
@@ -2209,15 +2232,10 @@ class Generic_UNet(SegmentationNetwork):
             for pi in range(len(num_pool_per_axis)):
                 map_size[pi] /= pool_op_kernel_sizes[p][pi]
             num_feat = min(num_feat * 2, max_num_features)
-            num_blocks = (conv_per_stage * 2 + 1) if p < (npool - 1) else conv_per_stage  # conv_per_stage + conv_per_stage for the convs of encode/decode and 1 for transposed conv
+            num_blocks = (conv_per_stage * 2 + 1) if p < (
+                        npool - 1) else conv_per_stage  # conv_per_stage + conv_per_stage for the convs of encode/decode and 1 for transposed conv
             tmp += num_blocks * np.prod(map_size, dtype=np.int64) * num_feat
             if deep_supervision and p < (npool - 2):
                 tmp += np.prod(map_size, dtype=np.int64) * num_classes
             # print(p, map_size, num_feat, tmp)
         return tmp
-
-
-
-
-
-
