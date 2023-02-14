@@ -1,4 +1,5 @@
 import os
+import pdb
 import sys
 import pickle
 import cv2
@@ -49,7 +50,6 @@ class ISICDataset(Dataset):#定义dataset类
             img = self.transform(img)
             torch.set_rng_state(state)#设置随机生成器状态
             mask = self.transform(mask)
-
         if self.mode == 'Training':
             return (img, mask)
         else:

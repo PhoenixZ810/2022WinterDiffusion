@@ -2,6 +2,8 @@
 
 import argparse
 import os
+import pdb
+
 import nibabel as nib
 # from visdom import Visdom
 # viz = Visdom(port=8850)
@@ -16,6 +18,7 @@ import torch.distributed as dist
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
 from guided_diffusion.isicloader import ISICDataset
+from guided_diffusion.FDSTloader import FDSTDataset
 import torchvision.utils as vutils
 from guided_diffusion.utils import staple
 from guided_diffusion.script_util import (
@@ -57,6 +60,13 @@ def main():
 
         ds = BRATSDataset(args.data_dir,transform_test)
         args.in_ch = 5
+    elif args.data_name == 'FDST':
+        tran_list = [transforms.Resize((160, 256)), transforms.ToTensor(), ]
+        transform_train = transforms.Compose(tran_list)
+
+        ds = FDSTDataset(args.data_dir, transform_train, test_flag=True)
+        args.in_ch = 4
+        args.image_size = 256
     datal = th.utils.data.DataLoader(
         ds,
         batch_size=1,
@@ -92,7 +102,10 @@ def main():
         b, m, path = next(data)  #should return an image from the dataloader "data"
         c = th.randn_like(b[:, :1, ...])
         img = th.cat((b, c), dim=1)     #add a noise channel$
-        slice_ID=path[0].split("_")[-1].split('.')[0]
+        if args.data_name == 'FDST':
+            slice_ID = path[0].split("/")[-2] + "_" + path[0].split("/")[-1].split('.')[0]
+        else:
+            slice_ID=path[0].split("_")[-1].split('.')[0]
 
         logger.log("sampling...")
 
@@ -106,18 +119,27 @@ def main():
             sample_fn = (
                 diffusion.p_sample_loop_known if not args.use_ddim else diffusion.ddim_sample_loop_known
             )
-            sample, x_noisy, org, cal, cal_out = sample_fn(
-                model,
-                (args.batch_size, 3, args.image_size, args.image_size), img,
-                step = args.diffusion_steps,
-                clip_denoised=args.clip_denoised, 
-                model_kwargs=model_kwargs,
-            )
+            if args.data_name == 'FDST':
+                sample, x_noisy, org, cal, cal_out = sample_fn(
+                    model,
+                    (args.batch_size, 3, 160, 256), img,
+                    step = args.diffusion_steps,
+                    clip_denoised=args.clip_denoised,
+                    model_kwargs=model_kwargs,
+                )
+            else:
+                sample, x_noisy, org, cal, cal_out = sample_fn(
+                    model,
+                    (args.batch_size, 3, args.image_size, args.image_size), img,
+                    step=args.diffusion_steps,
+                    clip_denoised=args.clip_denoised,
+                    model_kwargs=model_kwargs,
+                )
 
             end.record()
             th.cuda.synchronize()
             print('time for 1 sample', start.elapsed_time(end))  #time measurement for the generation of 1 sample
- 
+
             co = th.tensor(cal_out).repeat(1, 3, 1, 1)
             enslist.append(co)
 
@@ -131,6 +153,7 @@ def main():
                 compose = th.cat(tup,0)
                 vutils.save_image(compose, fp = args.out_dir +str(slice_ID)+'_output'+str(i)+".jpg", nrow = 1, padding = 10)
         ensres = staple(th.stack(enslist,dim=0)).squeeze(0)
+        # pdb.set_trace()
         vutils.save_image(ensres, fp = args.out_dir +str(slice_ID)+'_output_ens'+".jpg", nrow = 1, padding = 10)
 
 def create_argparser():

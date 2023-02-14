@@ -13,6 +13,7 @@ from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
+
 # from visdom import Visdom
 # viz = Visdom(port=8850)
 # loss_window = viz.line( Y=th.zeros((1)).cpu(), X=th.zeros((1)).cpu(), opts=dict(xlabel='epoch', ylabel='Loss', title='loss'))
@@ -25,41 +26,43 @@ from .resample import LossAwareSampler, UniformSampler
 # 20-21 within the first ~1K steps of training.
 INITIAL_LOG_LOSS_SCALE = 20.0
 
+
 def visualize(img):
     _min = img.min()
     _max = img.max()
-    normalized_img = (img - _min)/ (_max - _min)
+    normalized_img = (img - _min) / (_max - _min)
     return normalized_img
+
 
 class TrainLoop:
     def __init__(
-        self,
-        *,
-        model,
-        classifier,
-        diffusion,
-        data,
-        dataloader,
-        batch_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval,
-        save_interval,
-        resume_checkpoint,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
-        schedule_sampler=None,
-        weight_decay=0.0,
-        lr_anneal_steps=0,
+            self,
+            *,
+            model,
+            classifier,
+            diffusion,
+            data,
+            dataloader,
+            batch_size,
+            microbatch,
+            lr,
+            ema_rate,
+            log_interval,
+            save_interval,
+            resume_checkpoint,
+            use_fp16=False,
+            fp16_scale_growth=1e-3,
+            schedule_sampler=None,
+            weight_decay=0.0,
+            lr_anneal_steps=0,
     ):
         self.model = model
-        self.dataloader=dataloader
+        self.dataloader = dataloader
         self.classifier = classifier
         self.diffusion = diffusion
         self.data = data
         self.batch_size = batch_size
-        self.microbatch = microbatch if microbatch > 0 else batch_size#除非设置microbatch>0否则即为batch_size
+        self.microbatch = microbatch if microbatch > 0 else batch_size  # 除非设置microbatch>0否则即为batch_size
         self.lr = lr
         self.ema_rate = (
             [ema_rate]
@@ -74,6 +77,8 @@ class TrainLoop:
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
+        self.log_num = 0
+        self.save_num = 0
 
         self.step = 0
         self.resume_step = 0
@@ -170,41 +175,52 @@ class TrainLoop:
     def run_loop(self):
         i = 0
         data_iter = iter(self.dataloader)
+        start = th.cuda.Event(enable_timing=True)
+        end = th.cuda.Event(enable_timing=True)
         while (
-            not self.lr_anneal_steps
-            or self.step + self.resume_step < self.lr_anneal_steps
+                not self.lr_anneal_steps
+                or self.step + self.resume_step < self.lr_anneal_steps
         ):
 
-
             try:
-                    batch, cond = next(data_iter)#next返回一个batch的数据整体长度为总个数/batchsize, batch代表输入图像，cond代表分割图像
-                    # pdb.set_trace()
+                batch, cond = next(data_iter)  # next返回一个batch的数据整体长度为总个数/batchsize, batch代表输入图像，cond代表分割图像
+                # pdb.set_trace()
             except StopIteration:
-                    # StopIteration is thrown if dataset ends
-                    # reinitialize data loader
-                    data_iter = iter(self.dataloader)
-                    batch, cond = next(data_iter)#batch.shape[8,3,256,256],cond.shape[8,1,256,256]
+                # StopIteration is thrown if dataset ends
+                # reinitialize data loader
+                data_iter = iter(self.dataloader)
+                batch, cond = next(data_iter)  # batch.shape[8,3,256,256],cond.shape[8,1,256,256]
 
+            start.record()
             self.run_step(batch, cond)
+            end.record()
+            th.cuda.synchronize()  # 用于时间同步
 
-           
             i += 1
-          
+            '''run_step执行log_interval次以后print输出'''
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
+                self.log_num += 1
+                logger.log(f'log_num={self.log_num}')
+                logger.log(f'run_step_time={start.elapsed_time(end)}')
+            '''run_step执行sav_interval次以后保存'''
             if self.step % self.save_interval == 0:
                 self.save()
+                self.save_num += 1
+                logger.log(f'save_num={self.save_num}')
                 # Run for a finite amount of time in integration tests.
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
+
             self.step += 1
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
             self.save()
 
+    '''返回batchsize个sample结果'''
     def run_step(self, batch, cond):
-        batch=th.cat((batch, cond), dim=1)#通道维度进行拼接
-        cond={}
+        batch = th.cat((batch, cond), dim=1)  # 通道维度进行拼接
+        cond = {}
         sample = self.forward_backward(batch, cond)
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
@@ -217,15 +233,16 @@ class TrainLoop:
 
         self.mp_trainer.zero_grad()
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i : i + self.microbatch].to(dist_util.dev())#获取batch内容并分配给gpu，micro.shape[8,4,256,256]
+            micro = batch[i: i + self.microbatch].to(dist_util.dev())  # 获取batch的microsize个内容并分配给gpu，micro.shape[8,4,256,256]
             micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
+                k: v[i: i + self.microbatch].to(dist_util.dev())
                 for k, v in cond.items()
             }
 
             last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())#t为0-999内的batchsize个数，weights为batchsize个1
-            #schedule_sampler为UniformSampler(diffusion, diffusion_steps)，由train_loop传入，
+            t, weights = self.schedule_sampler.sample(micro.shape[0],
+                                                      dist_util.dev())  # t为0-999内的batchsize个数，weights为batchsize个1
+            # schedule_sampler为UniformSampler(diffusion, diffusion_steps)，由train_loop传入，
             # pdb.set_trace()
             '''使用partial生成带有固定参数的函数，training_losses_segementation为函数，其他变量为固定参数'''
             compute_losses = functools.partial(
@@ -252,7 +269,7 @@ class TrainLoop:
             sample = losses1[1]
 
             loss = (losses["loss"] * weights + losses['loss_cal'] * 10).mean()
-
+            '''print loss'''
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
@@ -260,7 +277,7 @@ class TrainLoop:
             for name, param in self.ddp_model.named_parameters():
                 if param.grad is None:
                     print(name)
-            return  sample
+            return sample
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -284,9 +301,9 @@ class TrainLoop:
             if dist.get_rank() == 0:
                 logger.log(f"saving model {rate}...")
                 if not rate:
-                    filename = f"savedmodel{(self.step+self.resume_step):06d}.pt"
+                    filename = f"savedmodel{(self.step + self.resume_step):06d}.pt"
                 else:
-                    filename = f"emasavedmodel_{rate}_{(self.step+self.resume_step):06d}.pt"
+                    filename = f"emasavedmodel_{rate}_{(self.step + self.resume_step):06d}.pt"
                 with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
                     th.save(state_dict, f)
 
@@ -296,8 +313,8 @@ class TrainLoop:
 
         if dist.get_rank() == 0:
             with bf.BlobFile(
-                bf.join(get_blob_logdir(), f"optsavedmodel{(self.step+self.resume_step):06d}.pt"),
-                "wb",
+                    bf.join(get_blob_logdir(), f"optsavedmodel{(self.step + self.resume_step):06d}.pt"),
+                    "wb",
             ) as f:
                 th.save(self.opt.state_dict(), f)
 

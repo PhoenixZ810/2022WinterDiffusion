@@ -17,7 +17,7 @@ from guided_diffusion.script_util import (
 import torch as th
 from guided_diffusion.train_util import TrainLoop
 from visdom import Visdom
-viz = Visdom(port=8850)
+viz = Visdom(port=8097)
 import torchvision.transforms as transforms
 import pdb
 # from pycallgraph import PyCallGraph
@@ -29,8 +29,8 @@ import pdb
 def main():
     args = create_argparser().parse_args()  #创建各类超参数
 
-    dist_util.setup_dist(args)
-    logger.configure(dir = args.out_dir)
+    dist_util.setup_dist(args)  # 设置GPU以及网络接口
+    logger.configure(dir = args.out_dir)  # 设置输出种类与格式
 
     logger.log("creating data loader...")
 
@@ -47,7 +47,7 @@ def main():
         ds = BRATSDataset(args.data_dir, transform_train, test_flag=False)
         args.in_ch = 5
     elif args.data_name == 'FDST':
-        tran_list = [transforms.Resize((240, 135)), transforms.ToTensor(), ]
+        tran_list = [transforms.Resize((160, 256)), transforms.ToTensor(), ]
         transform_train = transforms.Compose(tran_list)
 
         ds = FDSTDataset(args.data_dir, transform_train, test_flag=False)

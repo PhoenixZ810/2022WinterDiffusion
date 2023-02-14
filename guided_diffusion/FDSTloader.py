@@ -37,8 +37,8 @@ class FDSTDataset(data.Dataset):
             for img_path in glob.glob(os.path.join(path, '*.jpg')):
                 self.image_filenames.append(img_path)  # 将jpg路径名称添加到列表中
 
-        if test_flag:
-            self.image_filenames = sorted(self.image_filenames)  # 排序？
+        # if test_flag:
+        #     self.image_filenames = sorted(self.image_filenames)  # 排序？
         # transform_list = [transforms.ToTensor(),
         #                     transforms.Normalize(mean=[0.485, 0.456, 0.406],
         #                     std=[0.229, 0.224, 0.225])]#PILimage转换为Tensor,并进行归一化，三个通道分别对应三组均值+标准差
@@ -56,17 +56,20 @@ class FDSTDataset(data.Dataset):
     def __getitem__(self, index):
         filepath = self.image_filenames[index]
         if not self.test_flag:
-            img, den = self.img_pool[self.image_filenames[index]]
+            img, den, count = self.img_pool[self.image_filenames[index]]
             img = Image.open(filepath)
+            # plt.imshow(img)
+            # plt.show()
+            # pdb.set_trace()
             img = self.transform(img)
-
             return img, den
 
         else:
-            img, den = self.img_pool[self.image_filenames[index]]
+            img, den, count = self.img_pool[self.image_filenames[index]]
             img = Image.open(filepath)
             img = self.transform(img)
-            count = np.sum(den)/5
+            # count = np.sum(den)/5
+            # pdb.set_trace()
             return img, count, self.image_filenames[index]
 
     '''多张输入getitem'''
@@ -116,14 +119,15 @@ class FDSTDataset(data.Dataset):
             # den = np.asarray(denfile['density'])*5#总数增加五倍
             # img = np.asarray(denfile['image'])
             den = np.asarray(denfile['density']) * 5
+            count = np.sum(den)/5
             transform = transforms.Compose([
                 transforms.ToTensor()
             ])
             den = transform(den)
-            den = den.permute(0, 2, 1)
+            # den = den.permute(0, 2, 1)
             # pdb.set_trace() den = cv2.resize(den,(den.shape[1]//2,den.shape[0]//2),interpolation =
             # cv2.INTER_CUBIC)*4#宽高缩小为原来一半，总数仍然是五倍
-            self.img_pool[filename] = (img, den)  # 将字典中的filename对应到img和den
+            self.img_pool[filename] = (img, den, count)  # 将字典中的filename对应到img和den
             # pdb.set_trace()
         # roi = h5py.File("/home/smj/dataset/UCSD/roi.h5", 'r')
         # roi = np.asarray(roi['/roi'])

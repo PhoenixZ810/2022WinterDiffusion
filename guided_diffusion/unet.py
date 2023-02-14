@@ -469,7 +469,7 @@ class QKVAttention(nn.Module):
 
 
 class FFParser(nn.Module):
-    def __init__(self, dim, h=128, w=65):
+    def __init__(self, dim, h=80, w=128):
         super().__init__()
 
         self.w = w
@@ -2051,12 +2051,12 @@ class Generic_UNet(SegmentationNetwork):
                                                               first_stride, basic_block=basic_block))
             if d != num_pool - 1:
                 '''FDST'''
-                self.ffparser.append(FFParser(output_features, 240 // (2 ** (d + 1)), (135 // (2 ** (d + 1)) + 1)//2+1))
+                self.ffparser.append(FFParser(output_features, 160 // (2 ** (d + 1)), 256 // (2 ** (d + 2)) + 1))
                 '''else'''
                 # self.ffparser.append(FFParser(output_features, 256 // (2 ** (d + 1)), 256 // (2 ** (d + 2)) + 1))
 
             if not self.convolutional_pooling:
-                self.td.append(pool_op(pool_op_kernel_sizes[d],ceil_mode=True))
+                self.td.append(pool_op(pool_op_kernel_sizes[d]))
             input_features = output_features
             output_features = int(np.round(output_features * feat_map_mul_on_downscale))
 
@@ -2165,9 +2165,10 @@ class Generic_UNet(SegmentationNetwork):
         for d in range(len(self.conv_blocks_context) - 1):
             x = self.conv_blocks_context[d](x)
             # pdb.set_trace()
-            skips.append(x)
+            skips.append(x)  # skips中保存了rgb图片经过卷积后的分层输出
             if not self.convolutional_pooling:
                 x = self.td[d](x)  # 池化下采样
+            # hs中包含unet_input模块中的分层输出
             if hs:
                 h = hs.pop(0)
                 ddims = h.size(1)
@@ -2182,7 +2183,6 @@ class Generic_UNet(SegmentationNetwork):
 
         x = self.conv_blocks_context[-1](x)
         emb = conv_nd(2, x.size(1), 512, 1).to(device=x.device)(x)
-
         for u in range(len(self.tu)):
             x = self.tu[u](x)
             x = th.cat((x, skips[-(u + 1)]), dim=1)

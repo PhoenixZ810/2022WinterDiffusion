@@ -2,6 +2,8 @@
 Logger copied from OpenAI baselines to avoid extra RL-based dependencies:
 https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/logger.py
 """
+import pdb
+
 '''设置输出格式？'''
 import os
 import sys
@@ -191,13 +193,13 @@ class TensorBoardOutputFormat(KVWriter):
 def make_output_format(format, ev_dir, log_suffix=""):
     os.makedirs(ev_dir, exist_ok=True)
     if format == "stdout":
-        return HumanOutputFormat(sys.stdout)
+        return HumanOutputFormat(sys.stdout)  # 输出stdout
     elif format == "log":
-        return HumanOutputFormat(osp.join(ev_dir, "log%s.txt" % log_suffix))
+        return HumanOutputFormat(osp.join(ev_dir, "log%s.txt" % log_suffix))  #输出log文件
     elif format == "json":
         return JSONOutputFormat(osp.join(ev_dir, "progress%s.json" % log_suffix))
     elif format == "csv":
-        return CSVOutputFormat(osp.join(ev_dir, "progress%s.csv" % log_suffix))
+        return CSVOutputFormat(osp.join(ev_dir, "progress%s.csv" % log_suffix))  # 输出CSV
     elif format == "tensorboard":
         return TensorBoardOutputFormat(osp.join(ev_dir, "tb%s" % log_suffix))
     else:
@@ -438,7 +440,7 @@ def mpi_weighted_mean(comm, local_name2valcount):
     else:
         return {}
 
-
+'''制作output_dir'''
 def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
     """
     If comm is provided, average all numerical stats across that comm
@@ -460,12 +462,13 @@ def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
 
     if format_strs is None:
         if rank == 0:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT", "stdout,log,csv").split(",")
+            format_strs = os.getenv("OPENAI_LOG_FORMAT", "stdout,log,csv").split(",")  # ['stdout', 'log', 'csv']
         else:
             format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "log").split(",")
     format_strs = filter(None, format_strs)
+    '''设置不同输出格式文件'''
     output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]
-
+    # pdb.set_trace()
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:
         log("Logging to %s" % dir)

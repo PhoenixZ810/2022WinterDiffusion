@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="66d17af2-0d14-4981-93da-183c317ade18" name="V100">
+        <fileTransfer rootFolder="/home/zxy/2023winterdiffusion" accessType="SFTP" host="192.168.107.14" port="318" sshConfigId="4d826b7e-197b-4615-9c36-34ba9373cf04" sshConfig="zxy@192.168.107.14:318 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
