@@ -785,14 +785,16 @@ class UNetModel(nn.Module):
                 emb = emb.squeeze()
             h = module(h, emb)
             hs.append(h)
-        uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])  # uemb为conditional encoder返回值
-        h = h + uemb  # 累加
+        uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
+        # uemb[8,512,5,8]为conditional encoder返回值, cal[8,1,160,256]为上采样并卷积后的uemb
+        h = h + uemb  # mix
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)  # 在Unet中，output要与对应的input层相结合，用pop逐层弹出最后一个
             h = module(h, emb)
         h = h.type(x.dtype)
-        out = self.out(h)
+        out = self.out(h)  # out.shape[8,2,160,256]
+        pdb.set_trace()
         return out, cal
 
 

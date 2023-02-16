@@ -39,6 +39,7 @@ class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
             self.file = open(filename_or_file, "wt")
+            # 参数w; 打开一个文件只用于写入。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。
             self.own_file = True
         else:
             assert hasattr(filename_or_file, "read"), (
@@ -455,6 +456,7 @@ def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
     assert isinstance(dir, str)
     dir = os.path.expanduser(dir)
     os.makedirs(os.path.expanduser(dir), exist_ok=True)
+    # pdb.set_trace()
 
     rank = get_rank_without_mpi_import()
     if rank > 0:
@@ -462,12 +464,12 @@ def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
 
     if format_strs is None:
         if rank == 0:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT", "stdout,log,csv").split(",")  # ['stdout', 'log', 'csv']
+            format_strs = os.getenv("OPENAI_LOG_FORMAT", "stdout,log,csv").split(",")  # 若环境变量value为None, 则默认输出为['stdout', 'log', 'csv']
         else:
             format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "log").split(",")
     format_strs = filter(None, format_strs)
     '''设置不同输出格式文件'''
-    output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]
+    output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]  # 对三种不同的记录文件分别定义HumanOutputFormat
     # pdb.set_trace()
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:

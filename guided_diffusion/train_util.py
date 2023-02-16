@@ -265,7 +265,7 @@ class TrainLoop:
                 self.schedule_sampler.update_with_local_losses(
                     t, losses["loss"].detach()
                 )
-            losses = losses1[0]
+            losses = losses1[0]  # terms[vb,mse_diff,loss_cal,loss]
             sample = losses1[1]
 
             loss = (losses["loss"] * weights + losses['loss_cal'] * 10).mean()
@@ -277,7 +277,7 @@ class TrainLoop:
             for name, param in self.ddp_model.named_parameters():
                 if param.grad is None:
                     print(name)
-            return sample
+            return sample  # sample为 batchsize*output*h*w
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):
