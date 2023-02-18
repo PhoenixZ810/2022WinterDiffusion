@@ -193,16 +193,16 @@ class TrainLoop:
 
             start.record()
             self.run_step(batch, cond)
-            end.record()
-            th.cuda.synchronize()  # 用于时间同步
 
             i += 1
             '''run_step执行log_interval次以后print输出'''
             if self.step % self.log_interval == 0:
+                end.record()
+                th.cuda.synchronize()  # 用于时间同步
                 logger.dumpkvs()
                 self.log_num += 1
                 logger.log(f'log_num={self.log_num}')
-                logger.log(f'run_step_time={start.elapsed_time(end)}')
+                logger.log(f'run_interval*batchsize_time={start.elapsed_time(end)}')
             '''run_step执行sav_interval次以后保存'''
             if self.step % self.save_interval == 0:
                 self.save()

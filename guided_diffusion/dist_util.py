@@ -55,7 +55,7 @@ def dev():
     return th.device("cpu")
 
 
-def load_state_dict(path, **kwargs):
+def load_state_dict(path, **kwargs):  # **kwargs代表可传入任意数量的键值对
     """
     Load a PyTorch file without redundant fetches across MPI ranks.
     """

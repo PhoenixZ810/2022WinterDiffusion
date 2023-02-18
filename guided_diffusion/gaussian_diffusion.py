@@ -79,7 +79,7 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
         betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
     return np.array(betas)
 
-
+'''定义枚举类'''
 class ModelMeanType(enum.Enum):
     """
     Which type of output the model predicts.
@@ -143,7 +143,7 @@ class GaussianDiffusion:
             dpm_solver,
             rescale_timesteps=False,
     ):
-        self.model_mean_type = model_mean_type  # 定义学习目标，具体参数见class GaussianDiffusion下:param
+        self.model_mean_type = model_mean_type  # 定义学习目标，具体参数见class GaussianDiffusion下:param，默认为epsilon
         self.model_var_type = model_var_type
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
@@ -225,7 +225,6 @@ class GaussianDiffusion:
         )  # sqrt(alphat_bar)*x_t+sqrt(1-alphat_bar)*noise，根据x0和t推出x_t
 
     '''计算后验真实均值方差'''
-
     def q_posterior_mean_variance(self, x_start, x_t, t):
         """
         Compute the mean and variance of the diffusion posterior:
@@ -470,7 +469,7 @@ class GaussianDiffusion:
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
         )
         sample = out["mean"] + nonzero_mask * th.exp(
-            0.5 * out["log_variance"]) * noise  # exp(0.5 * out["log_variance"])为标准差
+            0.5 * out["log_variance"]) * noise  # exp(0.5 * out["log_variance"])为标准差, sample[1,1,160,256]
 
         return {"sample": sample, "pred_xstart": out["pred_xstart"], "cal": out["cal"]}
 
@@ -590,16 +589,15 @@ class GaussianDiffusion:
                     device=device,
                     progress=progress,
             ):
-                final = sample
-
-            if dice_score(final["sample"][:, -1, :, :].unsqueeze(1), final["cal"]) < 0.65:
-                cal_out = torch.clamp(final["cal"] + 0.25 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
-            else:
-                cal_out = torch.clamp(final["cal"] * 0.5 + 0.5 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
-        return final["sample"], x_noisy, img, final["cal"], cal_out
+                final = sample  # final.keys:'sample[1,1,160,256]', 'pred_xstart', 'cal[1,1,160,256]'
+            # if dice_score(final["sample"][:, -1, :, :].unsqueeze(1), final["cal"]) < 0.65:
+            #     cal_out = torch.clamp(final["cal"] + 0.25 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
+            # else:
+            #     cal_out = torch.clamp(final["cal"] * 0.5 + 0.5 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
+        # return final["sample"], x_noisy, img, final["cal"], cal_out
+        return final["sample"], x_noisy, img, final["cal"]
 
     '''从T倒推到0时刻'''
-
     def p_sample_loop_progressive(
             self,
             model,
@@ -626,7 +624,7 @@ class GaussianDiffusion:
             device = next(model.parameters()).device
         assert isinstance(shape, (tuple, list))
         if noise is not None:
-            img = noise
+            img = noise  # [1,4,160,156]
         else:
             img = th.randn(*shape, device=device)
         indices = list(range(time))[::-1]  # 对时间进行倒序索引
@@ -637,8 +635,8 @@ class GaussianDiffusion:
             from tqdm.auto import tqdm
 
             indices = tqdm(indices)
-
         else:
+            '''迭代采样'''
             for i in indices:
                 t = th.tensor([i] * shape[0], device=device)
                 # if i%100==0:
@@ -659,7 +657,7 @@ class GaussianDiffusion:
                         denoised_fn=denoised_fn,
                         model_kwargs=model_kwargs,
                     )
-                    yield out
+                    yield out  # 相当于return out并且下次迭代从下一行开始，可以在for循环中不断输出
                     img = out["sample"]
 
     def ddim_sample(
@@ -1014,7 +1012,7 @@ class GaussianDiffusion:
 
             model_output, cal = model(x_t, self._scale_timesteps(t), **model_kwargs)
             # model_output[8,2,160,156] cal.shape[8,1,160,256]
-            pdb.set_trace()
+            '''若方差可学习'''
             if self.model_var_type in [
                 ModelVarType.LEARNED,
                 ModelVarType.LEARNED_RANGE,
@@ -1046,12 +1044,12 @@ class GaussianDiffusion:
                 )[0],
                 ModelMeanType.START_X: mask,
                 ModelMeanType.EPSILON: noise,
-            }[self.model_mean_type]
+            }[self.model_mean_type]  # 选择target为u_t-1/x_0/epsilon
 
             # model_output = (cal > 0.5) * (model_output >0.5) * model_output if 2. * (cal*model_output).sum() / (
             # cal+model_output).sum() < 0.75 else model_output
-            terms["mse_diff"] = mean_flat((target - model_output) ** 2)
-            terms["loss_cal"] = mean_flat((mask - cal) ** 2)
+            terms["mse_diff"] = mean_flat((target - model_output) ** 2)  # target与model_output的loss,默认为白噪声
+            terms["loss_cal"] = mean_flat((mask - cal) ** 2)  # den与cal之间的loss
             # terms["mse"] = (terms["mse_diff"] + terms["mse_cal"]) / 2.
             '''如果方差可学习则加入vb loss'''
             if "vb" in terms:

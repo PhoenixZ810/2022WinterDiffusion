@@ -13,7 +13,7 @@ from matplotlib import cm as CM
 # from image import *
 
 #set the root to the path of FDST dataset you download
-root = '/home/zxy/2023WinterDiffusion/data_dir/FDST/'
+root = '/home/zxy/2023winterdiffusion/data_dir/FDST/'
 
 #now generate the FDST's ground truth
 # train_folder = os.path.join(root,'try_traindata3N')
@@ -32,6 +32,7 @@ img_row = 0
 for img_path in img_paths:
     #print (img_path)
     gt_path = img_path.replace('.jpg','.json')
+    gt_path = "/home/zxy/2023winterdiffusion/data_dir/FDST/test_data1/10/050.json"
     with open (gt_path,'r') as f:#打开json文件
         gt = json.load(f)
     # print (gt)
@@ -99,10 +100,10 @@ for img_path in img_paths:
         k[y_anno, x_anno] = 1
     # pdb.set_trace()
     # k = gaussian_filter(k,3)
-    k = gaussian_filter(k, 3)
-    # plt.imshow(k, cmap = CM.jet)
-    # plt.show()
-    # pdb.set_trace()
+    k = gaussian_filter(k, 3)*5
+    plt.imshow(k, cmap = CM.jet)
+    plt.show()
+    pdb.set_trace()
     with h5py.File(img_path.replace('.jpg','.h5'), 'w') as hf:#创建以图片名+resize.h5为名的h5py文件并赋值density为密度图
         # hf['image'] = img
         hf['density'] = k

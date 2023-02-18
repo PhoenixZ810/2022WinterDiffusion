@@ -193,14 +193,20 @@ class TensorBoardOutputFormat(KVWriter):
 
 def make_output_format(format, ev_dir, log_suffix=""):
     os.makedirs(ev_dir, exist_ok=True)
-    if format == "stdout":
+    if format == "train_stdout":
         return HumanOutputFormat(sys.stdout)  # 输出stdout
-    elif format == "log":
-        return HumanOutputFormat(osp.join(ev_dir, "log%s.txt" % log_suffix))  #输出log文件
+    elif format == "test_stdout":
+        return HumanOutputFormat(sys.stdout)
+    elif format == "train_log":
+        return HumanOutputFormat(osp.join(ev_dir, "train_log%s.txt" % log_suffix))  #输出log文件
+    elif format == "test_log":
+        return HumanOutputFormat(osp.join(ev_dir, "test_log%s.txt" % log_suffix))  #输出log文件
     elif format == "json":
         return JSONOutputFormat(osp.join(ev_dir, "progress%s.json" % log_suffix))
-    elif format == "csv":
-        return CSVOutputFormat(osp.join(ev_dir, "progress%s.csv" % log_suffix))  # 输出CSV
+    elif format == "train_csv":
+        return CSVOutputFormat(osp.join(ev_dir, "train_progress%s.csv" % log_suffix))  # 输出CSV
+    elif format == "test_csv":
+        return CSVOutputFormat(osp.join(ev_dir, "test_progress%s.csv" % log_suffix))  # 输出CSV
     elif format == "tensorboard":
         return TensorBoardOutputFormat(osp.join(ev_dir, "tb%s" % log_suffix))
     else:
@@ -442,7 +448,7 @@ def mpi_weighted_mean(comm, local_name2valcount):
         return {}
 
 '''制作output_dir'''
-def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
+def configure(dir='./results', arg = None,  format_strs=None, comm=None, log_suffix=""):
     """
     If comm is provided, average all numerical stats across that comm
     """
@@ -462,15 +468,18 @@ def configure(dir='./results', format_strs=None, comm=None, log_suffix=""):
     if rank > 0:
         log_suffix = log_suffix + "-rank%03i" % rank
 
+    trainortest_stdout = arg.trainortest + '_' + 'stdout'
+    trainortest_log = arg.trainortest + '_' + 'log'
+    trainortest_csv = arg.trainortest + '_' + 'csv'
+
     if format_strs is None:
         if rank == 0:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT", "stdout,log,csv").split(",")  # 若环境变量value为None, 则默认输出为['stdout', 'log', 'csv']
+            format_strs = os.getenv("OPENAI_LOG_FORMAT", "%s,%s,%s"%(trainortest_stdout, trainortest_log, trainortest_csv)).split(",")  # 若环境变量value为None, 则默认输出为['stdout', 'log', 'csv']
         else:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "log").split(",")
+            format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "%s")%trainortest_log.split(",")
     format_strs = filter(None, format_strs)
     '''设置不同输出格式文件'''
     output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]  # 对三种不同的记录文件分别定义HumanOutputFormat
-    # pdb.set_trace()
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:
         log("Logging to %s" % dir)

@@ -794,7 +794,6 @@ class UNetModel(nn.Module):
             h = module(h, emb)
         h = h.type(x.dtype)
         out = self.out(h)  # out.shape[8,2,160,256]
-        pdb.set_trace()
         return out, cal
 
 

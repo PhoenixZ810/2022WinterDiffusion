@@ -30,7 +30,7 @@ def main():
     args = create_argparser().parse_args()  #创建各类超参数
 
     dist_util.setup_dist(args)  # 设置GPU以及网络接口
-    logger.configure(dir = args.out_dir)  # 设置输出种类与格式
+    logger.configure(dir = args.out_dir, arg = args)  # 设置输出种类与格式
 
     logger.log("creating data loader...")
 
@@ -97,6 +97,7 @@ def main():
 
 def create_argparser():
     defaults = dict(
+        trainortest = 'train',
         data_name = 'BRATS',
         data_dir="../dataset/brats2020/training",
         schedule_sampler="uniform",
