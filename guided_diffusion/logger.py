@@ -38,6 +38,9 @@ class SeqWriter(object):
 class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
+            if os.path.exists(filename_or_file):
+                print(filename_or_file+' already exists')
+                # pdb.set_trace()
             self.file = open(filename_or_file, "wt")
             # 参数w; 打开一个文件只用于写入。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。
             self.own_file = True
@@ -344,8 +347,8 @@ class Logger(object):
     CURRENT = None  # Current logger being used by the free functions above
 
     def __init__(self, dir, output_formats, comm=None):
-        self.name2val = defaultdict(float)  # values this iteration
-        self.name2cnt = defaultdict(int)
+        self.name2val = defaultdict(float)  # values this iteration，为不存在的键提供float类型的0
+        self.name2cnt = defaultdict(int)  # 为不存在的键提供int类型的0
         self.level = INFO
         self.dir = dir
         self.output_formats = output_formats
@@ -354,10 +357,11 @@ class Logger(object):
     # Logging API, forwarded
     # ----------------------------------------
     def logkv(self, key, val):
-        self.name2val[key] = val
+        self.name2val[key] = val  # name2val: step/samples
 
+    '''每个step结束后在log_interval内计算平均loss'''
     def logkv_mean(self, key, val):
-        oldval, cnt = self.name2val[key], self.name2cnt[key]
+        oldval, cnt = self.name2val[key], self.name2cnt[key]  # 若key不存在，name2val赋值为float(0)，name2cnt赋值为int(0)
         self.name2val[key] = oldval * cnt / (cnt + 1) + val / (cnt + 1)
         self.name2cnt[key] = cnt + 1
 

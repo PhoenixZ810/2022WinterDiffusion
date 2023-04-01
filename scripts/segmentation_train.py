@@ -1,6 +1,6 @@
-
 import sys
 import argparse
+
 sys.path.append("..")
 sys.path.append(".")
 from guided_diffusion import dist_util, logger
@@ -17,9 +17,12 @@ from guided_diffusion.script_util import (
 import torch as th
 from guided_diffusion.train_util import TrainLoop
 from visdom import Visdom
+
 viz = Visdom(port=8097)
 import torchvision.transforms as transforms
 import pdb
+
+
 # from pycallgraph import PyCallGraph
 # from pycallgraph.output import GraphvizOutput
 # from pycallgraph import Config
@@ -27,30 +30,30 @@ import pdb
 
 
 def main():
-    args = create_argparser().parse_args()  #创建各类超参数
+    args = create_argparser().parse_args()  # 创建各类超参数
 
     dist_util.setup_dist(args)  # 设置GPU以及网络接口
-    logger.configure(dir = args.out_dir, arg = args)  # 设置输出种类与格式
+    logger.configure(dir=args.out_dir, arg=args)  # 设置输出种类与格式
 
     logger.log("creating data loader...")
 
     if args.data_name == 'ISIC':
-        tran_list = [transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor(),]  #传入需要对图片进行的操作
+        tran_list = [transforms.Resize((args.image_size, args.image_size)), transforms.ToTensor(), ]  # 传入需要对图片进行的操作
         transform_train = transforms.Compose(tran_list)  # 生成操作容器，便于对图片进行操作
 
         ds = ISICDataset(args, args.data_dir, transform_train)  # 创建dataset类
         args.in_ch = 4
     elif args.data_name == 'BRATS':
-        tran_list = [transforms.Resize((args.image_size,args.image_size)),]
+        tran_list = [transforms.Resize((args.image_size, args.image_size)), ]
         transform_train = transforms.Compose(tran_list)
 
         ds = BRATSDataset(args.data_dir, transform_train, test_flag=False)
         args.in_ch = 5
     elif args.data_name == 'FDST':
-        tran_list = [transforms.Resize((160, 256)), transforms.ToTensor(), ]
+        tran_list = [transforms.ToTensor()]
         transform_train = transforms.Compose(tran_list)
 
-        ds = FDSTDataset(args.data_dir, transform_train, test_flag=False)
+        ds = FDSTDataset(args.data_dir, args.crop_size, transform_train, test_flag=False)
         args.in_ch = 4
         args.image_size = 256
 
@@ -66,12 +69,11 @@ def main():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )  # 生成模型和diffusion方法
     if args.multi_gpu:
-        model = th.nn.DataParallel(model,device_ids=[int(id) for id in args.multi_gpu.split(',')])
-        model.to(device = th.device('cuda', int(args.gpu_dev)))
+        model = th.nn.DataParallel(model, device_ids=[int(id) for id in args.multi_gpu.split(',')])
+        model.to(device=th.device('cuda', int(args.gpu_dev)))
     else:
         model.to(dist_util.dev())
-    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion,  maxt=args.diffusion_steps)
-
+    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=args.diffusion_steps)
 
     logger.log("training...")
     TrainLoop(
@@ -97,8 +99,8 @@ def main():
 
 def create_argparser():
     defaults = dict(
-        trainortest = 'train',
-        data_name = 'BRATS',
+        trainortest='train',
+        data_name='BRATS',
         data_dir="../dataset/brats2020/training",
         schedule_sampler="uniform",
         lr=1e-4,
@@ -109,16 +111,17 @@ def create_argparser():
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=100,
         save_interval=5000,
-        resume_checkpoint='',#'"./results/pretrainedmodel.pt",
+        resume_checkpoint='',  # '"./results/pretrainedmodel.pt",
         use_fp16=False,
         fp16_scale_growth=1e-3,
-        gpu_dev = "0",
-        multi_gpu = None, #"0,1,2"
-        out_dir='./results/'
+        gpu_dev="0",
+        multi_gpu=None,  # "0,1,2"
+        out_dir='./results/',
+        crop_size=256
     )
-    defaults.update(model_and_diffusion_defaults())#将defaults训练参数和model diffusion超参数合并为同一个词典
+    defaults.update(model_and_diffusion_defaults())  # 将defaults训练参数和model diffusion超参数合并为同一个词典
     parser = argparse.ArgumentParser()
-    add_dict_to_argparser(parser, defaults)#将超参词典转化为超参
+    add_dict_to_argparser(parser, defaults)  # 将超参词典转化为超参
     return parser
 
 

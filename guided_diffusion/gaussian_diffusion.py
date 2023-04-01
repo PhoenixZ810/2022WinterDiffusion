@@ -13,6 +13,7 @@ import torch
 import math
 # from visdom import Visdom
 # viz = Visdom(port=8850)
+import pandas as pd
 import numpy as np
 import torch as th
 from .train_util import visualize
@@ -218,11 +219,14 @@ class GaussianDiffusion:
         if noise is None:
             noise = th.randn_like(x_start)
         assert noise.shape == x_start.shape
+        # coefficient1 = _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape)
+        # coefficient2 = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
+        # pdb.set_trace()
         return (
                 _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
                 + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
                 * noise
-        )  # sqrt(alphat_bar)*x_t+sqrt(1-alphat_bar)*noise，根据x0和t推出x_t
+        )  # sqrt(alphat_bar)*x_0+sqrt(1-alphat_bar)*noise，根据x0和t推出x_t
 
     '''计算后验真实均值方差'''
     def q_posterior_mean_variance(self, x_start, x_t, t):
@@ -274,9 +278,11 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         C = 1
         cal = 0
+
         assert t.shape == (B,)
         '''模型输入输出'''
-        model_output = model(x, self._scale_timesteps(t), **model_kwargs)  # x为当前时刻采样，t为当前时刻的embedding
+        model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        # x为当前时刻采样，t为当前时刻的embedding
         if isinstance(model_output, tuple):
             model_output, cal = model_output
         x = x[:, -1:, ...]  # loss is only calculated on the last channel, not on the input brain MR image
@@ -293,7 +299,7 @@ class GaussianDiffusion:
                 min_log = _extract_into_tensor(
                     self.posterior_log_variance_clipped, t, x.shape
                 )  # log(beta_tuta)
-                max_log = _extract_into_tensor(np.log(self.betas), t, x.shape)  ##log(beta)
+                max_log = _extract_into_tensor(np.log(self.betas), t, x.shape)  # log(beta)
                 # The model_var_values is [-1, 1] for [min_var, max_var].
                 frac = (model_var_values + 1) / 2  # 将系数范围化到[0,1]
                 model_log_variance = frac * max_log + (1 - frac) * min_log
@@ -348,9 +354,10 @@ class GaussianDiffusion:
             "mean": model_mean,
             "variance": model_variance,
             "log_variance": model_log_variance,
-            "pred_xstart": pred_xstart,
-            'cal': cal,
-        }
+            "pred_xstart": pred_xstart}
+        #     ,
+        #     'cal': cal,
+        # }
 
     '''从噪声中反推x0'''
 
@@ -471,7 +478,7 @@ class GaussianDiffusion:
         sample = out["mean"] + nonzero_mask * th.exp(
             0.5 * out["log_variance"]) * noise  # exp(0.5 * out["log_variance"])为标准差, sample[1,1,160,256]
 
-        return {"sample": sample, "pred_xstart": out["pred_xstart"], "cal": out["cal"]}
+        return {"sample": sample, "pred_xstart": out["pred_xstart"]}#, "cal": out["cal"]}
 
     '''循环采样'''
 
@@ -545,6 +552,7 @@ class GaussianDiffusion:
         noise = th.randn_like(img[:, :1, ...]).to(device)
         x_noisy = torch.cat((img[:, :-1, ...], noise), dim=1)  # add noise as the last channel
         img = img.to(device)
+        # pdb.set_trace()
 
         if self.dpm_solver:
             final = {}
@@ -572,7 +580,7 @@ class GaussianDiffusion:
             final["sample"] = sample
             final["cal"] = cal
 
-            cal_out = torch.clamp(final["cal"] + 0.25 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
+            # cal_out = torch.clamp(final["cal"] + 0.25 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
         else:
             print('no dpm-solver')
 
@@ -595,7 +603,7 @@ class GaussianDiffusion:
             # else:
             #     cal_out = torch.clamp(final["cal"] * 0.5 + 0.5 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
         # return final["sample"], x_noisy, img, final["cal"], cal_out
-        return final["sample"], x_noisy, img, final["cal"]
+        return final["sample"], x_noisy, img#, final["cal"]
 
     '''从T倒推到0时刻'''
     def p_sample_loop_progressive(
@@ -689,7 +697,7 @@ class GaussianDiffusion:
 
         # Usually our model outputs epsilon, but we re-derive it
         # in case we used x_start or x_prev prediction.
-        eps = self._predict_eps_from_xstart(x, t, out["pred_xstart"])
+        eps = self._predict_eps_from_xstart(x, t, out["pred_start"])
 
         alpha_bar = _extract_into_tensor(self.alphas_cumprod, t, x.shape)
         alpha_bar_prev = _extract_into_tensor(self.alphas_cumprod_prev, t, x.shape)
@@ -975,7 +983,6 @@ class GaussianDiffusion:
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
     '''确定loss包含的种类'''
-
     def training_losses_segmentation(self, model, classifier, x_start, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
@@ -992,10 +999,16 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start[:, -1:, ...])  # 将第四维mask填充为正态噪声，shape[8,1,256,256]
-
+        # t = torch.tensor([i for i in range(65, 65 + x_start.shape[0])]).to(x_start.device)
         mask = x_start[:, -1:, ...]  # shape[8,1,256,256]
         res = torch.where(mask > 0, 1, 0)  # 变为二值图像；若mask中任意元素>0，则取1否则取0
         # merge all tumor classes into one to get a binary segmentation mask
+
+        # writer = pd.ExcelWriter('res_t.xlsx')
+        # for i in range(mask.shape[0]):
+        #     ex = pd.DataFrame(mask.cpu().numpy()[i].squeeze(0))
+        #     ex.to_excel(writer, 'den' + str(i), float_format='%.5f')
+
         # plt.imshow(res[0].squeeze(0).cpu().numpy())
         # plt.imshow(mask[0].squeeze(0).cpu().numpy())
         # plt.show()
@@ -1003,14 +1016,24 @@ class GaussianDiffusion:
         #     mask[0].squeeze(0).cpu().numpy()
         #     , opts={'title': 'Random!', 'caption': 'Click me!'})
         # pdb.set_trace()
+
         res_t = self.q_sample(mask, t, noise=noise)  # 将原始den加噪t步后得到加噪后的x_t add noise to the segmentation channel
+        # viz.image(mask[0].cpu().numpy().squeeze(0))
+
+        # for i in range(res_t.shape[0]):
+        #     ex = pd.DataFrame(res_t.cpu().numpy()[i].squeeze(0))
+        #     ex.to_excel(writer, 'noise'+str(i), float_format='%.5f')
+        #     viz.image(res_t.cpu().numpy()[i].squeeze(0), opts=dict(title='den', caption = str(t.cpu().numpy()[i])))
+        # writer.save()
+        # writer.close()
+        # pdb.set_trace()
         x_t = x_start.float()
         x_t[:, -1:, ...] = res_t.float()  # 将第四维mask替换为加噪后的x_t
         terms = {}
 
         if self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
 
-            model_output, cal = model(x_t, self._scale_timesteps(t), **model_kwargs)
+            model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
             # model_output[8,2,160,156] cal.shape[8,1,160,256]
             '''若方差可学习'''
             if self.model_var_type in [
@@ -1026,13 +1049,13 @@ class GaussianDiffusion:
                 # it affect our mean prediction.
                 frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
                 '''求对数似然'''
-                terms["vb"] = self._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
-                    x_start = mask,
-                    x_t=res_t,
-                    t=t,
-                    clip_denoised=False,
-                )["output"]
+                # terms["vb"] = self._vb_terms_bpd(
+                #     model=lambda *args, r=frozen_out: r,
+                #     x_start = mask,
+                #     x_t=res_t,
+                #     t=t,
+                #     clip_denoised=False,
+                # )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
                     # Divide by 1000 for equivalence with initial implementation.
                     # Without a factor of 1/1000, the VB term hurts the MSE term.
@@ -1049,7 +1072,6 @@ class GaussianDiffusion:
             # model_output = (cal > 0.5) * (model_output >0.5) * model_output if 2. * (cal*model_output).sum() / (
             # cal+model_output).sum() < 0.75 else model_output
             terms["mse_diff"] = mean_flat((target - model_output) ** 2)  # target与model_output的loss,默认为白噪声
-            terms["loss_cal"] = mean_flat((mask - cal) ** 2)  # den与cal之间的loss
             # terms["mse"] = (terms["mse_diff"] + terms["mse_cal"]) / 2.
             '''如果方差可学习则加入vb loss'''
             if "vb" in terms:
@@ -1061,6 +1083,111 @@ class GaussianDiffusion:
             raise NotImplementedError(self.loss_type)
 
         return (terms, model_output)  # return terms/model_out_image
+        # terms [vb,loss,loss_cal,mse_loss]
+
+    '''分割类loss'''
+    # def training_losses_segmentation(self, model, classifier, x_start, t, model_kwargs=None, noise=None):
+    #     """
+    #     Compute training losses for a single timestep.
+    #     :param model: the model to evaluate loss on.
+    #     :param x_start: the [N x C x ...] tensor of inputs.
+    #     :param t: a batch of timestep indices.
+    #     :param model_kwargs: if not None, a dict of extra keyword arguments to
+    #         pass to the model. This can be used for conditioning.
+    #     :param noise: if specified, the specific Gaussian noise to try to remove.
+    #     :return: a dict with the key "loss" containing a tensor of shape [N].
+    #              Some mean or variance settings may also have other keys.
+    #     """
+    #     if model_kwargs is None:
+    #         model_kwargs = {}
+    #     if noise is None:
+    #         noise = th.randn_like(x_start[:, -1:, ...])  # 将第四维mask填充为正态噪声，shape[8,1,256,256]
+    #     # t = torch.tensor([i for i in range(65, 65 + x_start.shape[0])]).to(x_start.device)
+    #     mask = x_start[:, -1:, ...]  # shape[8,1,256,256]
+    #     res = torch.where(mask > 0, 1, 0)  # 变为二值图像；若mask中任意元素>0，则取1否则取0
+    #     # merge all tumor classes into one to get a binary segmentation mask
+    #
+    #     # writer = pd.ExcelWriter('res_t.xlsx')
+    #     # for i in range(mask.shape[0]):
+    #     #     ex = pd.DataFrame(mask.cpu().numpy()[i].squeeze(0))
+    #     #     ex.to_excel(writer, 'den' + str(i), float_format='%.5f')
+    #
+    #     # plt.imshow(res[0].squeeze(0).cpu().numpy())
+    #     # plt.imshow(mask[0].squeeze(0).cpu().numpy())
+    #     # plt.show()
+    #     # viz.image(
+    #     #     mask[0].squeeze(0).cpu().numpy()
+    #     #     , opts={'title': 'Random!', 'caption': 'Click me!'})
+    #     # pdb.set_trace()
+    #
+    #     res_t = self.q_sample(mask, t, noise=noise)  # 将原始den加噪t步后得到加噪后的x_t add noise to the segmentation channel
+    #     # viz.image(mask[0].cpu().numpy().squeeze(0))
+    #
+    #     # for i in range(res_t.shape[0]):
+    #     #     ex = pd.DataFrame(res_t.cpu().numpy()[i].squeeze(0))
+    #     #     ex.to_excel(writer, 'noise'+str(i), float_format='%.5f')
+    #     #     viz.image(res_t.cpu().numpy()[i].squeeze(0), opts=dict(title='den', caption = str(t.cpu().numpy()[i])))
+    #     # writer.save()
+    #     # writer.close()
+    #     # pdb.set_trace()
+    #     x_t = x_start.float()
+    #     x_t[:, -1:, ...] = res_t.float()  # 将第四维mask替换为加噪后的x_t
+    #     terms = {}
+    #
+    #     if self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+    #
+    #         model_output, cal = model(x_t, self._scale_timesteps(t), **model_kwargs)
+    #         # model_output[8,2,160,156] cal.shape[8,1,160,256]
+    #         '''若方差可学习'''
+    #         if self.model_var_type in [
+    #             ModelVarType.LEARNED,
+    #             ModelVarType.LEARNED_RANGE,
+    #         ]:
+    #             B, C = x_t.shape[:2]
+    #             C = 1
+    #             assert model_output.shape == (B, C * 2, *x_t.shape[2:])
+    #             model_output, model_var_values = th.split(model_output, C, dim=1)
+    #             # model_output[8,1,160,156]  model_var_values[8,1,160,256]
+    #             # Learn the variance using the variational bound, but don't let
+    #             # it affect our mean prediction.
+    #             frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
+    #             '''求对数似然'''
+    #             terms["vb"] = self._vb_terms_bpd(
+    #                 model=lambda *args, r=frozen_out: r,
+    #                 x_start = mask,
+    #                 x_t=res_t,
+    #                 t=t,
+    #                 clip_denoised=False,
+    #             )["output"]
+    #             if self.loss_type == LossType.RESCALED_MSE:
+    #                 # Divide by 1000 for equivalence with initial implementation.
+    #                 # Without a factor of 1/1000, the VB term hurts the MSE term.
+    #                 terms["vb"] *= self.num_timesteps / 1000.0
+    #         '''针对预测的不同返回不同的值'''
+    #         target = {
+    #             ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+    #                 x_start=mask, x_t=res_t, t=t
+    #             )[0],
+    #             ModelMeanType.START_X: mask,
+    #             ModelMeanType.EPSILON: noise,
+    #         }[self.model_mean_type]  # 选择target为u_t-1/x_0/epsilon
+    #
+    #         # model_output = (cal > 0.5) * (model_output >0.5) * model_output if 2. * (cal*model_output).sum() / (
+    #         # cal+model_output).sum() < 0.75 else model_output
+    #         terms["mse_diff"] = mean_flat((target - model_output) ** 2)  # target与model_output的loss,默认为白噪声
+    #         terms["loss_cal"] = mean_flat((mask - cal) ** 2)  # den与cal之间的loss
+    #         # terms["mse"] = (terms["mse_diff"] + terms["mse_cal"]) / 2.
+    #         '''如果方差可学习则加入vb loss'''
+    #         if "vb" in terms:
+    #             terms["loss"] = terms["mse_diff"] + terms["vb"]
+    #         else:
+    #             terms["loss"] = terms["mse_diff"]
+    #
+    #     else:
+    #         raise NotImplementedError(self.loss_type)
+    #
+    #     return (terms, model_output)  # return terms/model_out_image
+    #     # terms [vb,loss,loss_cal,mse_loss]
 
     '''先验的KL散度'''
 

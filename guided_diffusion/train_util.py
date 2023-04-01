@@ -81,12 +81,12 @@ class TrainLoop:
         self.save_num = 0
 
         self.step = 0
-        self.resume_step = 0
+        self.resume_step = 1 if self.resume_checkpoint else 0
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.sync_cuda = th.cuda.is_available()
 
-        self._load_and_sync_parameters()
+        self._load_and_sync_parameters()  # 寻找checkpoint?
         self.mp_trainer = MixedPrecisionTrainer(
             model=self.model,
             use_fp16=self.use_fp16,
@@ -96,6 +96,7 @@ class TrainLoop:
         self.opt = AdamW(
             self.mp_trainer.master_params, lr=self.lr, weight_decay=self.weight_decay
         )
+        # pdb.set_trace()
         if self.resume_step:
             self._load_optimizer_state()
             # Model was resumed, either due to a restart or a checkpoint
@@ -149,6 +150,7 @@ class TrainLoop:
 
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         ema_checkpoint = find_ema_checkpoint(main_checkpoint, self.resume_step, rate)
+        # pdb.set_trace()
         if ema_checkpoint:
             if dist.get_rank() == 0:
                 logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
@@ -163,7 +165,7 @@ class TrainLoop:
     def _load_optimizer_state(self):
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         opt_checkpoint = bf.join(
-            bf.dirname(main_checkpoint), f"opt{self.resume_step:06}.pt"
+            bf.dirname(main_checkpoint), f"optsavedmodel{self.resume_step:06}.pt"
         )
         if bf.exists(opt_checkpoint):
             logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
@@ -268,7 +270,7 @@ class TrainLoop:
             losses = losses1[0]  # terms[vb,mse_diff,loss_cal,loss]
             sample = losses1[1]
 
-            loss = (losses["loss"] * weights + losses['loss_cal'] * 10).mean()
+            loss = (losses["loss"] * weights).mean()
             '''print loss'''
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
@@ -351,7 +353,7 @@ def find_resume_checkpoint():
 def find_ema_checkpoint(main_checkpoint, step, rate):
     if main_checkpoint is None:
         return None
-    filename = f"ema_{rate}_{(step):06d}.pt"
+    filename = f"emasavedmodel_{rate}_{(step):06d}.pt"
     path = bf.join(bf.dirname(main_checkpoint), filename)
     if bf.exists(path):
         return path
@@ -363,5 +365,5 @@ def log_loss_dict(diffusion, ts, losses):
         logger.logkv_mean(key, values.mean().item())
         # Log the quantiles (four quartiles, in particular).
         for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
-            quartile = int(4 * sub_t / diffusion.num_timesteps)
+            quartile = int(4 * sub_t / diffusion.num_timesteps)  # 四分位数
             logger.logkv_mean(f"{key}_q{quartile}", sub_loss)

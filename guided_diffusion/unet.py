@@ -785,16 +785,54 @@ class UNetModel(nn.Module):
                 emb = emb.squeeze()
             h = module(h, emb)
             hs.append(h)
-        uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
+        # uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
         # uemb[8,512,5,8]为conditional encoder返回值, cal[8,1,160,256]为上采样并卷积后的uemb
-        h = h + uemb  # mix
+        # h = h + uemb  # mix
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)  # 在Unet中，output要与对应的input层相结合，用pop逐层弹出最后一个
             h = module(h, emb)
         h = h.type(x.dtype)
         out = self.out(h)  # out.shape[8,2,160,256]
-        return out, cal
+        return out
+    # def forward(self, x, timesteps, y=None):
+    #     """
+    #     Apply the model to an input batch.
+    #
+    #     :param x: an [N x C x ...] Tensor of inputs.
+    #     :param timesteps: a 1-D batch of timesteps.
+    #     :param y: an [N] Tensor of labels, if class-conditional.
+    #     :return: an [N x C x ...] Tensor of outputs.
+    #     """
+    #     assert (y is not None) == (
+    #             self.num_classes is not None
+    #     ), "must specify y if and only if the model is class-conditional"
+    #
+    #     hs = []
+    #     emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))  # emb.shape[8,512]
+    #
+    #     if self.num_classes is not None:
+    #         assert y.shape == (x.shape[0],)
+    #         emb = emb + self.label_emb(y)
+    #
+    #     h = x.type(self.dtype)  # [8, 4, 240, 135]
+    #     c = h[:, :-1, ...]  # 选取rgb三个通道[8, 3, 240, 135]
+    #     hlist = []
+    #     for ind, module in enumerate(self.input_blocks):
+    #         if len(emb.size()) > 2:
+    #             emb = emb.squeeze()
+    #         h = module(h, emb)
+    #         hs.append(h)
+    #     uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
+    #     # uemb[8,512,5,8]为conditional encoder返回值, cal[8,1,160,256]为上采样并卷积后的uemb
+    #     h = h + uemb  # mix
+    #     h = self.middle_block(h, emb)
+    #     for module in self.output_blocks:
+    #         h = th.cat([h, hs.pop()], dim=1)  # 在Unet中，output要与对应的input层相结合，用pop逐层弹出最后一个
+    #         h = module(h, emb)
+    #     h = h.type(x.dtype)
+    #     out = self.out(h)  # out.shape[8,2,160,256]
+    #     return out, cal
 
 
 class SuperResModel(UNetModel):

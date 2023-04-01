@@ -8,6 +8,7 @@ from PIL import Image
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 from torch.utils.data.sampler import Sampler
 import numpy as np
 # from util import is_image_file, load_img#, load_gt
@@ -18,15 +19,19 @@ import cv2
 import h5py
 import pdb
 import glob
-
+import random
+from visdom import Visdom
+from decimal import Decimal
+viz = Visdom(port=8097)
 
 # cv2.setNumThreads(0)
 # cv2.ocl.setUseOpenCL(False)
 class FDSTDataset(data.Dataset):
-    def __init__(self, image_dir, transform_list, test_flag=False):
+    def __init__(self, image_dir, crop_size, transform_list, test_flag=False):
         super(FDSTDataset, self).__init__()
         self.photo_path = image_dir  # join(image_dir, "new_gt")
         # self.den_path = join(image_dir, "b")
+        self.crop_size = int(crop_size)
         self.test_flag = test_flag
         # self.image_filenames = [x for x in listdir(self.photo_path) if is_image_file(x)]
         self.path_sets = [os.path.join(self.photo_path, x) for x in listdir(self.photo_path) if
@@ -53,26 +58,42 @@ class FDSTDataset(data.Dataset):
         self.get_all_img()
 
     '''单张输入getitem'''
+
     def __getitem__(self, index):
         filepath = self.image_filenames[index]
         if not self.test_flag:
             img, den, count = self.img_pool[self.image_filenames[index]]
-            img = Image.open(filepath)
+            # img = Image.open(filepath)
             # plt.imshow(img)
             # plt.show()
             # pdb.set_trace()
-            img = self.transform(img)
-            return img, den
+            h, w = img.shape[0], img.shape[1]
+            h_ran = random.randint(0, h - self.crop_size)
+            w_ran = random.randint(0, w - self.crop_size)
+            img_crop = img[h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size, :]
+            # viz.image(img_crop)
+            den_crop = den[:, h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size]
+            # viz.image(den_crop)
+            # viz.heatmap(den_crop)
+            # viz.heatmap(den)
+            # plt.imshow(den_crop)
+            # plt.show()
+            # pdb.set_trace()
+            # img_crop = img_crop.transpose(1,2,0)
+            img_crop = self.transform(img_crop)
+
+            # pdb.set_trace()
+            return img_crop, den_crop
 
         else:
             img, den, count = self.img_pool[self.image_filenames[index]]
-            img = Image.open(filepath)
+            # img = Image.open(filepath)
             img = self.transform(img)
             # count = np.sum(den)/5
             # pdb.set_trace()
             return img, count, self.image_filenames[index]
-
     '''多张输入getitem'''
+
     # def __getitem__(self, index):  # 获取当前index对应的图片以及之前T（imgnum)帧的完全处理好的所有img和den
     #     # Load Image
     #     filepath = join(self.photo_path, self.image_filenames[index])
@@ -112,14 +133,23 @@ class FDSTDataset(data.Dataset):
         for filename in self.image_filenames:
             filepath = filename
             # pdb.set_trace()
-            # img = cv2.imread(filepath)[:, :, ::-1]  # cv2.read返回(h,w,c),由于imread返回的通道顺序为BGR，所以需要转换为RGB方便处理
-            img = Image.open(filepath)
+            img = cv2.imread(filepath)[:, :, ::-1]
+            # cv2.read返回(h,w,c),由于imread返回的通道顺序为BGR，所以需要转换为RGB方便处理
+            # img = Image.open(filepath)
             denpath = filepath.replace('.jpg', '.h5')
             denfile = h5py.File(denpath, 'r')
+            den = np.asarray(denfile['density'])
+#
+            h_res, w_res = den.shape[0], den.shape[1]
+            # if w_res % 32 != 0:
+            #     w_res = int(Decimal(float(w_res) / 32).quantize(Decimal("0."), rounding="ROUND_HALF_UP") * 32)
+            # if h_res % 32 != 0:
+            #     h_res = int(Decimal(float(h_res) / 32).quantize(Decimal("0."), rounding="ROUND_HALF_UP") * 32)
+            img = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
+            # img = img.transpose(2, 0, 1)
             # den = np.asarray(denfile['density'])*5#总数增加五倍
             # img = np.asarray(denfile['image'])
-            den = np.asarray(denfile['density']) * 5
-            count = np.sum(den)/5
+            count = np.sum(den) / 5
             transform = transforms.Compose([
                 transforms.ToTensor()
             ])
@@ -193,7 +223,7 @@ def load_img(img_pool, filename, imgnum, istest):
         # pdb.set_trace()
         return img.transpose((2, 0, 1)), np.array(gt_cnt), filename
 
-
+#
 class CustSamp(Sampler):
     def __init__(self, dataset):
         # num = int(len(dataset)/4)
