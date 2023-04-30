@@ -39,14 +39,14 @@ class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
             if os.path.exists(filename_or_file):
-                print(filename_or_file+' already exists')
+                print(filename_or_file + ' already exists')
                 # pdb.set_trace()
             self.file = open(filename_or_file, "wt")
             # 参数w; 打开一个文件只用于写入。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。
             self.own_file = True
         else:
             assert hasattr(filename_or_file, "read"), (
-                "expected file or str, got %s" % filename_or_file
+                    "expected file or str, got %s" % filename_or_file
             )
             self.file = filename_or_file
             self.own_file = False
@@ -194,22 +194,22 @@ class TensorBoardOutputFormat(KVWriter):
             self.writer = None
 
 
-def make_output_format(format, ev_dir, log_suffix=""):
+def make_output_format(format, ev_dir, model, log_suffix=""):
     os.makedirs(ev_dir, exist_ok=True)
     if format == "train_stdout":
         return HumanOutputFormat(sys.stdout)  # 输出stdout
     elif format == "test_stdout":
         return HumanOutputFormat(sys.stdout)
     elif format == "train_log":
-        return HumanOutputFormat(osp.join(ev_dir, "train_log%s.txt" % log_suffix))  #输出log文件
+        return HumanOutputFormat(osp.join(ev_dir, "train_log%s.txt" % log_suffix))  # 输出log文件
     elif format == "test_log":
-        return HumanOutputFormat(osp.join(ev_dir, "test_log%s.txt" % log_suffix))  #输出log文件
+        return HumanOutputFormat(osp.join(ev_dir, "test_log%s%s.txt" % (log_suffix, model[-9:-3])))  # 输出log文件
     elif format == "json":
         return JSONOutputFormat(osp.join(ev_dir, "progress%s.json" % log_suffix))
     elif format == "train_csv":
         return CSVOutputFormat(osp.join(ev_dir, "train_progress%s.csv" % log_suffix))  # 输出CSV
     elif format == "test_csv":
-        return CSVOutputFormat(osp.join(ev_dir, "test_progress%s.csv" % log_suffix))  # 输出CSV
+        return CSVOutputFormat(osp.join(ev_dir, "test_progress%s%s.csv" % (log_suffix, model[-9:-3])))  # 输出CSV
     elif format == "tensorboard":
         return TensorBoardOutputFormat(osp.join(ev_dir, "tb%s" % log_suffix))
     else:
@@ -360,9 +360,10 @@ class Logger(object):
         self.name2val[key] = val  # name2val: step/samples
 
     '''每个step结束后在log_interval内计算平均loss'''
+
     def logkv_mean(self, key, val):
         oldval, cnt = self.name2val[key], self.name2cnt[key]  # 若key不存在，name2val赋值为float(0)，name2cnt赋值为int(0)
-        self.name2val[key] = oldval * cnt / (cnt + 1) + val / (cnt + 1)
+        self.name2val[key] = oldval * cnt / (cnt + 1) + val / (cnt + 1)  # 计算平均值？为什么
         self.name2cnt[key] = cnt + 1
 
     def dumpkvs(self):
@@ -451,8 +452,11 @@ def mpi_weighted_mean(comm, local_name2valcount):
     else:
         return {}
 
+
 '''制作output_dir'''
-def configure(dir='./results', arg = None,  format_strs=None, comm=None, log_suffix=""):
+
+
+def configure(dir='./results', arg=None, format_strs=None, comm=None, log_suffix=""):
     """
     If comm is provided, average all numerical stats across that comm
     """
@@ -478,12 +482,15 @@ def configure(dir='./results', arg = None,  format_strs=None, comm=None, log_suf
 
     if format_strs is None:
         if rank == 0:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT", "%s,%s,%s"%(trainortest_stdout, trainortest_log, trainortest_csv)).split(",")  # 若环境变量value为None, 则默认输出为['stdout', 'log', 'csv']
+            format_strs = os.getenv("OPENAI_LOG_FORMAT",
+                                    "%s,%s,%s" % (trainortest_stdout, trainortest_log, trainortest_csv)).split(
+                ",")  # 若环境变量value为None, 则默认输出为['stdout', 'log', 'csv']
         else:
-            format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "%s")%trainortest_log.split(",")
+            format_strs = os.getenv("OPENAI_LOG_FORMAT_MPI", "%s") % trainortest_log.split(",")
     format_strs = filter(None, format_strs)
     '''设置不同输出格式文件'''
-    output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]  # 对三种不同的记录文件分别定义HumanOutputFormat
+    output_formats = [make_output_format(f, dir, arg.model_path, log_suffix) for f in
+                      format_strs]  # 对三种不同的记录文件分别定义HumanOutputFormat
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:
         log("Logging to %s" % dir)
@@ -510,4 +517,3 @@ def scoped_configure(dir=None, format_strs=None, comm=None):
     finally:
         Logger.CURRENT.close()
         Logger.CURRENT = prevlogger
-

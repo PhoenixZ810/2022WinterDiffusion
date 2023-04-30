@@ -7,6 +7,7 @@ import pdb
 from visdom import Visdom
 from torch.autograd import Variable
 import enum
+from torchmetrics import StructuralSimilarityIndexMeasure as SSIM
 import torch.nn.functional as F
 from torchvision.utils import save_image
 import torch
@@ -569,7 +570,7 @@ class GaussianDiffusion:
                                     correcting_x0_fn="dynamic_thresholding", img=img[:, :-1, ...])
 
             ## Steps in [20, 30] can generate quite good samples.
-            sample, cal = dpm_solver.sample(
+            sample = dpm_solver.sample(  # sample,cal =
                 noise.to(dtype=th.float),
                 steps=step,
                 order=2,
@@ -578,7 +579,7 @@ class GaussianDiffusion:
             )
             sample[:, -1, :, :] = norm(sample[:, -1, :, :])
             final["sample"] = sample
-            final["cal"] = cal
+            # final["cal"] = cal
 
             # cal_out = torch.clamp(final["cal"] + 0.25 * final["sample"][:, -1, :, :].unsqueeze(1), 0, 1)
         else:
@@ -998,9 +999,10 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
-            noise = th.randn_like(x_start[:, -1:, ...])  # 将第四维mask填充为正态噪声，shape[8,1,256,256]
+            noise = th.randn_like(x_start[:, -1:, ...])  # 获取第四维大小的正态噪声，shape[8,1,256,256]
         # t = torch.tensor([i for i in range(65, 65 + x_start.shape[0])]).to(x_start.device)
-        mask = x_start[:, -1:, ...]  # shape[8,1,256,256]
+        mask = x_start[:, -1:, ...]  # x_0，shape[8,1,256,256]
+        # viz.image(mask[0])
         res = torch.where(mask > 0, 1, 0)  # 变为二值图像；若mask中任意元素>0，则取1否则取0
         # merge all tumor classes into one to get a binary segmentation mask
 
@@ -1017,7 +1019,8 @@ class GaussianDiffusion:
         #     , opts={'title': 'Random!', 'caption': 'Click me!'})
         # pdb.set_trace()
 
-        res_t = self.q_sample(mask, t, noise=noise)  # 将原始den加噪t步后得到加噪后的x_t add noise to the segmentation channel
+        res_t = self.q_sample(mask, t, noise=noise)
+        # 将原始den加噪t步后得到加噪后的x_t add noise to the segmentation channel
         # viz.image(mask[0].cpu().numpy().squeeze(0))
 
         # for i in range(res_t.shape[0]):
@@ -1068,21 +1071,30 @@ class GaussianDiffusion:
                 ModelMeanType.START_X: mask,
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]  # 选择target为u_t-1/x_0/epsilon
+            # res_t = _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
+            #     + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
+            #     * noise
+            x_0_inverse = (res_t - _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, model_output.shape)
+                * model_output)/_extract_into_tensor(self.sqrt_alphas_cumprod, t, model_output.shape)
 
             # model_output = (cal > 0.5) * (model_output >0.5) * model_output if 2. * (cal*model_output).sum() / (
             # cal+model_output).sum() < 0.75 else model_output
             terms["mse_diff"] = mean_flat((target - model_output) ** 2)  # target与model_output的loss,默认为白噪声
-            # terms["mse"] = (terms["mse_diff"] + terms["mse_cal"]) / 2.
+            # terms["mse"] = (terms["mse_diff"] + terms["mse_cal"]) / 2
+            # terms["x_0"] = mean_flat((mask - x_0_inverse) ** 2)
+            ssim = SSIM(data_range=1.0, win_size=11, win_sigma=1.5, k1=0.01, k2=0.03, eps=1e-8, reduction='none').to(mask.device)
+            terms["SSIM"] = 1.0-ssim(x_0_inverse, mask)
+
             '''如果方差可学习则加入vb loss'''
             if "vb" in terms:
                 terms["loss"] = terms["mse_diff"] + terms["vb"]
             else:
-                terms["loss"] = terms["mse_diff"]
+                terms["loss"] = terms["mse_diff"] + terms["SSIM"]
 
         else:
             raise NotImplementedError(self.loss_type)
 
-        return (terms, model_output)  # return terms/model_out_image
+        return [terms, model_output]  # return terms/model_out_image
         # terms [vb,loss,loss_cal,mse_loss]
 
     '''分割类loss'''

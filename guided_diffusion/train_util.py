@@ -13,7 +13,13 @@ from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
+from visdom import Visdom
 
+viz = Visdom(port=8097)
+viz.line([0.], [0.], win='general_loss', opts=dict(xlabel='log_num/10', title='general_loss'))
+viz.line([0.], [0.], win='noise_mse', opts=dict(xlabel='log_num/10', title='noise_mse'))
+viz.line([0.], [0.], win='x_0_mse', opts=dict(xlabel='log_num/10', title='x_0_mse'))
+viz.line([0.], [0.], win='SSIM', opts=dict(xlabel='log_num/10', title='SSIM'))
 # from visdom import Visdom
 # viz = Visdom(port=8850)
 # loss_window = viz.line( Y=th.zeros((1)).cpu(), X=th.zeros((1)).cpu(), opts=dict(xlabel='epoch', ylabel='Loss', title='loss'))
@@ -186,15 +192,17 @@ class TrainLoop:
 
             try:
                 batch, cond = next(data_iter)  # next返回一个batch的数据整体长度为总个数/batchsize, batch代表输入图像，cond代表分割图像
+                # viz.image(batch[0])
+                # viz.heatmap(cond[0][0])
                 # pdb.set_trace()
             except StopIteration:
                 # StopIteration is thrown if dataset ends
                 # reinitialize data loader
                 data_iter = iter(self.dataloader)
                 batch, cond = next(data_iter)  # batch.shape[8,3,256,256],cond.shape[8,1,256,256]
-
             start.record()
-            self.run_step(batch, cond)
+            self.run_step(batch, cond, self.log_num)
+
 
             i += 1
             '''run_step执行log_interval次以后print输出'''
@@ -220,10 +228,11 @@ class TrainLoop:
             self.save()
 
     '''返回batchsize个sample结果'''
-    def run_step(self, batch, cond):
+
+    def run_step(self, batch, cond, log_num):
         batch = th.cat((batch, cond), dim=1)  # 通道维度进行拼接
         cond = {}
-        sample = self.forward_backward(batch, cond)
+        sample = self.forward_backward(batch, cond, log_num)
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
             self._update_ema()
@@ -231,11 +240,12 @@ class TrainLoop:
         self.log_step()
         return sample
 
-    def forward_backward(self, batch, cond):
+    def forward_backward(self, batch, cond, log_num):
 
         self.mp_trainer.zero_grad()
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i: i + self.microbatch].to(dist_util.dev())  # 获取batch的microsize个内容并分配给gpu，micro.shape[8,4,256,256]
+            micro = batch[i: i + self.microbatch].to(
+                dist_util.dev())  # 获取batch的microsize个内容并分配给gpu，micro.shape[8,4,256,256]
             micro_cond = {
                 k: v[i: i + self.microbatch].to(dist_util.dev())
                 for k, v in cond.items()
@@ -267,8 +277,17 @@ class TrainLoop:
                 self.schedule_sampler.update_with_local_losses(
                     t, losses["loss"].detach()
                 )
+
             losses = losses1[0]  # terms[vb,mse_diff,loss_cal,loss]
             sample = losses1[1]
+
+            if log_num % 10 == 0:
+                # pdb.set_trace()
+                viz.line([losses["loss"].mean().item()], [log_num/10], win='general_loss', update='append')
+                viz.line([losses["mse_diff"].mean().item()], [log_num/10], win='noise_mse', update='append')
+                # viz.line([losses["x_0"].mean().item()], [log_num / 10], win='x_0_mse', update='append')
+                viz.line([losses["SSIM"].mean().item()], [log_num / 10], win='SSIM', update='append')
+                # pdb.set_trace()
 
             loss = (losses["loss"] * weights).mean()
             '''print loss'''

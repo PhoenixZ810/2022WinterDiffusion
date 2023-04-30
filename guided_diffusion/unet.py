@@ -785,9 +785,10 @@ class UNetModel(nn.Module):
                 emb = emb.squeeze()
             h = module(h, emb)
             hs.append(h)
+        uemb = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
         # uemb, cal = self.highway_forward(c, [hs[3], hs[6], hs[9], hs[12]])
         # uemb[8,512,5,8]为conditional encoder返回值, cal[8,1,160,256]为上采样并卷积后的uemb
-        # h = h + uemb  # mix
+        h = h + uemb  # mix
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)  # 在Unet中，output要与对应的input层相结合，用pop逐层弹出最后一个
@@ -2222,20 +2223,22 @@ class Generic_UNet(SegmentationNetwork):
 
         x = self.conv_blocks_context[-1](x)
         emb = conv_nd(2, x.size(1), 512, 1).to(device=x.device)(x)
-        for u in range(len(self.tu)):
-            x = self.tu[u](x)
-            x = th.cat((x, skips[-(u + 1)]), dim=1)
-            x = self.conv_blocks_localization[u](x)
-            if self._deep_supervision:
-                seg_outputs.append(self.final_nonlin(self.seg_outputs[u](x)))
-        if not seg_outputs:
-            seg_outputs.append(self.final_nonlin(self.seg_outputs[0](x)))
-
-        if self._deep_supervision and self.do_ds:
-            return tuple([seg_outputs[-1]] + [i(j) for i, j in
-                                              zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
-        else:
-            return emb, seg_outputs[-1]
+        '''上采样部分'''
+        # for u in range(len(self.tu)):
+        #     x = self.tu[u](x)
+        #     x = th.cat((x, skips[-(u + 1)]), dim=1)
+        #     x = self.conv_blocks_localization[u](x)
+        #     if self._deep_supervision:
+        #         seg_outputs.append(self.final_nonlin(self.seg_outputs[u](x)))
+        # if not seg_outputs:
+        #     seg_outputs.append(self.final_nonlin(self.seg_outputs[0](x)))
+        #
+        # if self._deep_supervision and self.do_ds:
+        #     return tuple([seg_outputs[-1]] + [i(j) for i, j in
+        #                                       zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
+        # else:
+        #     return emb, seg_outputs[-1]
+        return emb
 
     @staticmethod
     def compute_approx_vram_consumption(patch_size, num_pool_per_axis, base_num_features, max_num_features,

@@ -15,13 +15,13 @@ from decimal import Decimal
 # from image import *
 
 # set the root to the path of FDST dataset you download
-root = '/home/zxy/2023winterdiffusion/data_dir/FDST/'
-# root = '/home/zxy/2023WinterDiffusion/data_dir/FDST/'
+# root = '/mnt/HDD2/zxy/2023winterdiffusion/data_dir/FDST/'
+root = '/home/zxy/2023WinterDiffusion/data_dir/FDST/'
 # now generate the FDST's ground truth
 # train_folder = os.path.join(root,'try_traindata3N')
 # test_folder = os.path.join(root,'try_testdata3N')
-train_folder = os.path.join(root, 'train_data1')
-test_folder = os.path.join(root, 'test_data1')
+train_folder = os.path.join(root, 'train_data')
+test_folder = os.path.join(root, 'test_data_small')
 path_sets = [os.path.join(train_folder, f) for f in os.listdir(train_folder) if
              os.path.isdir(os.path.join(train_folder, f))] + [os.path.join(test_folder, f) for f in
                                                               os.listdir(test_folder) if
@@ -37,7 +37,7 @@ img_row = 0
 
 for img_path in img_paths:
     # print (img_path)
-    img_path = "/home/zxy/2023WinterDiffusion/data_dir/FDST/test_data1/5/115.jpg"
+    # img_path = "/home/zxy/2023WinterDiffusion/data_dir/FDST/train_data/3/115.jpg"
     gt_path = img_path.replace('.jpg', '.json')
     # gt_path = "/home/zxy/2023WinterDiffusion/data_dir/FDST/test_data1/10/041.json"
     with open(gt_path, 'r') as f:  # 打开json文件
@@ -49,15 +49,30 @@ for img_path in img_paths:
     # break
     # img= plt.imread(img_path)#读取图片
     # img_path = "/home/zxy/Bayes-loss++/datasets/UCF-QNRF_ECCV18/Train/img_0001.jpg"
-    img = cv2.imread(img_path)
+    img = cv2.imread(img_path)[:, :, ::-1]
     im_h, im_w = img.shape[0], img.shape[1]
     # plt.imshow(img)
     # plt.show()
-    h_res, w_res = int(im_h/2), int(im_w/2)
-    img_res = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
+    # h_res, w_res = int(im_h), int(im_w)
+    # img_res = img
+    # h_res, w_res = int(im_h/2), int(im_w/2)
+    # img_res = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
     # plt.imshow(img_res)
     # plt.show()
+    h_res, w_res = int(im_h / 4), int(im_w / 4)
+    if w_res % 32 != 0:
+        w_res = int(Decimal(float(w_res) / 32).quantize(Decimal("0."), rounding="ROUND_HALF_UP") * 32)
+    if h_res % 32 != 0:
+        h_res = (int(h_res / 32)-1) * 32
     # pdb.set_trace()
+    h_res, w_res = 160, 256
+    img_res = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
+
+    # plt.show()
+    # h_res, w_res = int(im_h / 8), int(im_w / 8)
+    # img_res = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
+    # plt.imshow(img_res)
+    # plt.show()
 
     # pdb.set_trace()
     # if im_w % 32 != 0:
@@ -128,26 +143,26 @@ for img_path in img_paths:
     #     print(x_anno, y_anno)
     '''resize scale k'''
     for i in range(0, len(anno_list)):
-        y_anno = min(int(float(anno_list[i]['shape_attributes']['y']) / rate_h), h_den-1)
-        x_anno = min(int(float(anno_list[i]['shape_attributes']['x']) / rate_w), w_den-1)
+        y_anno = min(int(float(anno_list[i]['shape_attributes']['y']) / rate_h)+3, h_den-1)
+        x_anno = min(int(float(anno_list[i]['shape_attributes']['x']) / rate_w)+3, w_den-1)
         # y_anno = min(int(anno_list[i]['shape_attributes']['y'] / rate_h), 159)
         # x_anno = min(int(anno_list[i]['shape_attributes']['x'] / rate_w), 255)
         # y_anno = anno_list[i]['shape_attributes']['y']
         # x_anno = anno_list[i]['shape_attributes']['x']
         k[y_anno, x_anno] = 1
     # pdb.set_trace()
-    k = gaussian_filter(k, 4)*5
+    k = gaussian_filter(k, 2)*5
     # '''GT与k对比'''
     # k, GT = gaussian_filter(k, 5) * 5, gaussian_filter(GT, 3) * 5
     # k, GT = np.expand_dims(k, axis=2), np.expand_dims(GT, axis=2)
-    plt.imshow(k)
-    plt.show()
+    # plt.imshow(k)
+    # plt.show()
     # plt.imshow(GT)
     # plt.show()
-    pdb.set_trace()
+    # pdb.set_trace()
 
     with h5py.File(img_path.replace('.jpg', '.h5'), 'w') as hf:  # 创建以图片名+resize.h5为名的h5py文件并赋值density为密度图
-        # hf['image'] = img_res
+        hf['image'] = img_res
         hf['density'] = k
         hf.close()
     img_row += 1

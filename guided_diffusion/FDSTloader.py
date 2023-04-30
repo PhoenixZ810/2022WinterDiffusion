@@ -31,7 +31,7 @@ class FDSTDataset(data.Dataset):
         super(FDSTDataset, self).__init__()
         self.photo_path = image_dir  # join(image_dir, "new_gt")
         # self.den_path = join(image_dir, "b")
-        self.crop_size = int(crop_size)
+        self.crop_size = crop_size
         self.test_flag = test_flag
         # self.image_filenames = [x for x in listdir(self.photo_path) if is_image_file(x)]
         self.path_sets = [os.path.join(self.photo_path, x) for x in listdir(self.photo_path) if
@@ -68,11 +68,20 @@ class FDSTDataset(data.Dataset):
             # plt.show()
             # pdb.set_trace()
             h, w = img.shape[0], img.shape[1]
-            h_ran = random.randint(0, h - self.crop_size)
-            w_ran = random.randint(0, w - self.crop_size)
-            img_crop = img[h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size, :]
-            # viz.image(img_crop)
-            den_crop = den[:, h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size]
+            if self.crop_size:
+                if h >= self.crop_size and w>=self.crop_size:
+                    h_ran = random.randint(0, h - self.crop_size)
+                    w_ran = random.randint(0, w - self.crop_size)
+                    img_crop = img[h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size, :]
+                    # viz.image(img_crop)
+                    den_crop = den[:, h_ran:h_ran + self.crop_size, w_ran:w_ran + self.crop_size]
+                else:
+                    print(h,w,self.crop_size)
+                    print("crop size too large")
+            else:
+                img_crop = img
+                den_crop = den
+
             # viz.image(den_crop)
             # viz.heatmap(den_crop)
             # viz.heatmap(den)
@@ -133,19 +142,20 @@ class FDSTDataset(data.Dataset):
         for filename in self.image_filenames:
             filepath = filename
             # pdb.set_trace()
-            img = cv2.imread(filepath)[:, :, ::-1]
+            # img = cv2.imread(filepath)[:, :, ::-1]
             # cv2.read返回(h,w,c),由于imread返回的通道顺序为BGR，所以需要转换为RGB方便处理
             # img = Image.open(filepath)
             denpath = filepath.replace('.jpg', '.h5')
             denfile = h5py.File(denpath, 'r')
             den = np.asarray(denfile['density'])
-#
-            h_res, w_res = den.shape[0], den.shape[1]
+            img = np.asarray(denfile['image'])
+
+            # h_res, w_res = den.shape[0], den.shape[1]
             # if w_res % 32 != 0:
             #     w_res = int(Decimal(float(w_res) / 32).quantize(Decimal("0."), rounding="ROUND_HALF_UP") * 32)
             # if h_res % 32 != 0:
             #     h_res = int(Decimal(float(h_res) / 32).quantize(Decimal("0."), rounding="ROUND_HALF_UP") * 32)
-            img = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
+            # img = cv2.resize(img, (w_res, h_res), interpolation=cv2.INTER_AREA)
             # img = img.transpose(2, 0, 1)
             # den = np.asarray(denfile['density'])*5#总数增加五倍
             # img = np.asarray(denfile['image'])
@@ -153,7 +163,9 @@ class FDSTDataset(data.Dataset):
             transform = transforms.Compose([
                 transforms.ToTensor()
             ])
-            den = transform(den)
+            # den = den*20
+            # viz.heatmap(den)
+            den = transform(den*2)
             # den = den.permute(0, 2, 1)
             # pdb.set_trace() den = cv2.resize(den,(den.shape[1]//2,den.shape[0]//2),interpolation =
             # cv2.INTER_CUBIC)*4#宽高缩小为原来一半，总数仍然是五倍

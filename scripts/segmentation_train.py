@@ -16,12 +16,14 @@ from guided_diffusion.script_util import (
 )
 import torch as th
 from guided_diffusion.train_util import TrainLoop
-from visdom import Visdom
 
+from visdom import Visdom
 viz = Visdom(port=8097)
 import torchvision.transforms as transforms
 import pdb
-
+from torchsummary import summary
+import datetime
+import traceback
 
 # from pycallgraph import PyCallGraph
 # from pycallgraph.output import GraphvizOutput
@@ -30,11 +32,13 @@ import pdb
 
 
 def main():
+    time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     args = create_argparser().parse_args()  # 创建各类超参数
 
     dist_util.setup_dist(args)  # 设置GPU以及网络接口
     logger.configure(dir=args.out_dir, arg=args)  # 设置输出种类与格式
 
+    logger.log(time)
     logger.log("creating data loader...")
 
     if args.data_name == 'ISIC':
@@ -74,27 +78,54 @@ def main():
     else:
         model.to(dist_util.dev())
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=args.diffusion_steps)
-
+    # print(model)
+    # pdb.set_trace()
     logger.log("training...")
-    TrainLoop(
-        model=model,
-        diffusion=diffusion,
-        classifier=None,
-        data=data,
-        dataloader=datal,
-        batch_size=args.batch_size,
-        microbatch=args.microbatch,
-        lr=args.lr,
-        ema_rate=args.ema_rate,
-        log_interval=args.log_interval,
-        save_interval=args.save_interval,
-        resume_checkpoint=args.resume_checkpoint,
-        use_fp16=args.use_fp16,
-        fp16_scale_growth=args.fp16_scale_growth,
-        schedule_sampler=schedule_sampler,
-        weight_decay=args.weight_decay,
-        lr_anneal_steps=args.lr_anneal_steps,
-    ).run_loop()
+    try:
+        TrainLoop(
+            model=model,
+            diffusion=diffusion,
+            classifier=None,
+            data=data,
+            dataloader=datal,
+            batch_size=args.batch_size,
+            microbatch=args.microbatch,
+            lr=args.lr,
+            ema_rate=args.ema_rate,
+            log_interval=args.log_interval,
+            save_interval=args.save_interval,
+            resume_checkpoint=args.resume_checkpoint,
+            use_fp16=args.use_fp16,
+            fp16_scale_growth=args.fp16_scale_growth,
+            schedule_sampler=schedule_sampler,
+            weight_decay=args.weight_decay,
+            lr_anneal_steps=args.lr_anneal_steps,
+        ).run_loop()
+    except Exception as e:
+        logger.log(traceback.format_exc())
+        time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.log(time)
+    # TrainLoop(
+    #     model=model,
+    #     diffusion=diffusion,
+    #     classifier=None,
+    #     data=data,
+    #     dataloader=datal,
+    #     batch_size=args.batch_size,
+    #     microbatch=args.microbatch,
+    #     lr=args.lr,
+    #     ema_rate=args.ema_rate,
+    #     log_interval=args.log_interval,
+    #     save_interval=args.save_interval,
+    #     resume_checkpoint=args.resume_checkpoint,
+    #     use_fp16=args.use_fp16,
+    #     fp16_scale_growth=args.fp16_scale_growth,
+    #     schedule_sampler=schedule_sampler,
+    #     weight_decay=args.weight_decay,
+    #     lr_anneal_steps=args.lr_anneal_steps,
+    # ).run_loop()
+
+
 
 
 def create_argparser():
@@ -110,14 +141,15 @@ def create_argparser():
         microbatch=-1,  # -1 disables microbatches
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=100,
-        save_interval=5000,
+        save_interval=10000,
         resume_checkpoint='',  # '"./results/pretrainedmodel.pt",
         use_fp16=False,
+        model_path="",
         fp16_scale_growth=1e-3,
         gpu_dev="0",
         multi_gpu=None,  # "0,1,2"
         out_dir='./results/',
-        crop_size=256
+        crop_size=None
     )
     defaults.update(model_and_diffusion_defaults())  # 将defaults训练参数和model diffusion超参数合并为同一个词典
     parser = argparse.ArgumentParser()
